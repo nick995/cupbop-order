@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(start \"C:\\\\Users\\\\mingy\\\\source\\\\repos\\\\CupbopParkCity\\\\index.html\")",
+      "PowerShell(npm *)",
+      "PowerShell(New-Item *)",
+      "PowerShell(Move-Item *)"
+    ]
+  }
+}

@@ -1,0 +1,192 @@
+import { NextResponse } from "next/server";
+import { getSupabaseServerClient } from "@/lib/supabase";
+import {
+  OrderNotificationPayload,
+  sendOrderEmail,
+  sendOrderSMS,
+} from "@/lib/notifications";
+
+interface OrderItem {
+  lineId: string;
+  proteinId: string;
+  proteinName: string;
+  spicyLevelId: string;
+  spicyLevel: string;
+  modIds: string[];
+  mods: string[];
+  qty: number;
+  unitPrice: number;
+  lineTotal: number;
+}
+
+interface OrderPayload {
+  customer_name: string;
+  customer_phone: string;
+  customer_email: string;
+  order_type: "Pickup" | "Catering";
+  pickup_date: string;
+  pickup_time: string;
+  delivery_address?: string;
+  payment_method: "Cash" | "Credit Card";
+  special_instructions: string;
+  subtotal: number;
+  items: OrderItem[];
+}
+
+const CATERING_MIN_BOWLS = 15;
+
+function validate(body: unknown): body is OrderPayload {
+  if (!body || typeof body !== "object") return false;
+  const b = body as Record<string, unknown>;
+  return (
+    typeof b.customer_name === "string" &&
+    typeof b.customer_phone === "string" &&
+    typeof b.customer_email === "string" &&
+    (b.order_type === "Pickup" || b.order_type === "Catering") &&
+    typeof b.pickup_date === "string" &&
+    typeof b.pickup_time === "string" &&
+    (b.payment_method === "Cash" || b.payment_method === "Credit Card") &&
+    typeof b.subtotal === "number" &&
+    Array.isArray(b.items)
+  );
+}
+
+export async function POST(request: Request) {
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+  }
+
+  if (!validate(payload)) {
+    return NextResponse.json(
+      { error: "Missing or invalid fields." },
+      { status: 400 }
+    );
+  }
+
+  const order = payload;
+
+  // Server-side enforcement of catering rules
+  if (order.order_type === "Catering") {
+    const totalBowls = order.items.reduce((sum, it) => sum + (it.qty || 0), 0);
+    if (totalBowls < CATERING_MIN_BOWLS) {
+      return NextResponse.json(
+        {
+          error: `Catering orders require at least ${CATERING_MIN_BOWLS} bowls.`,
+        },
+        { status: 400 }
+      );
+    }
+    if (!order.delivery_address || !order.delivery_address.trim()) {
+      return NextResponse.json(
+        { error: "Catering orders require a delivery address." },
+        { status: 400 }
+      );
+    }
+  }
+
+  // Try to insert into Supabase. If env vars are missing (local dev without
+  // Supabase yet), we still let the order through with a generated ID so the
+  // UI flow can be tested end-to-end. Remove this fallback once Supabase is set up.
+  const hasSupabase =
+    !!process.env.NEXT_PUBLIC_SUPABASE_URL &&
+    !!process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!hasSupabase) {
+    console.warn(
+      "[orders] Supabase env vars missing — skipping DB insert. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to enable persistence."
+    );
+    const localId = `local-${Date.now()}`;
+    // Still try to send notifications even without DB so the store can be alerted.
+    void notifyStore({ ...order, orderId: localId });
+    return NextResponse.json({ id: localId, stored: false });
+  }
+
+  try {
+    const supabase = getSupabaseServerClient();
+    const { data, error } = await supabase
+      .from("orders")
+      .insert({
+        customer_name: order.customer_name.trim(),
+        customer_phone: order.customer_phone.trim(),
+        customer_email: order.customer_email.trim().toLowerCase(),
+        order_type: order.order_type,
+        pickup_date: order.pickup_date,
+        pickup_time: order.pickup_time,
+        delivery_address: order.delivery_address?.trim() || null,
+        payment_method: order.payment_method,
+        special_instructions: order.special_instructions?.trim() || null,
+        status: "New",
+        subtotal: order.subtotal,
+        items: order.items,
+      })
+      .select("id")
+      .single();
+
+    if (error) {
+      console.error("[orders] supabase insert error", error);
+      return NextResponse.json(
+        { error: "Could not save your order. Please try again." },
+        { status: 500 }
+      );
+    }
+
+    // Notify the store (email + SMS). Fire-and-forget — don't block the
+    // customer's confirmation if the notifier fails.
+    void notifyStore({ ...order, orderId: data.id });
+
+    return NextResponse.json({ id: data.id, stored: true });
+  } catch (err) {
+    console.error("[orders] unexpected", err);
+    return NextResponse.json(
+      { error: "Unexpected server error." },
+      { status: 500 }
+    );
+  }
+}
+
+async function notifyStore(
+  payload: OrderPayload & { orderId: string }
+): Promise<void> {
+  const notif: OrderNotificationPayload = {
+    orderId: payload.orderId,
+    customer_name: payload.customer_name,
+    customer_phone: payload.customer_phone,
+    customer_email: payload.customer_email,
+    order_type: payload.order_type,
+    pickup_date: payload.pickup_date,
+    pickup_time: payload.pickup_time,
+    delivery_address: payload.delivery_address ?? null,
+    payment_method: payload.payment_method,
+    special_instructions: payload.special_instructions,
+    subtotal: payload.subtotal,
+    items: payload.items.map((it) => ({
+      proteinName: it.proteinName,
+      spicyLevel: it.spicyLevel,
+      mods: it.mods,
+      qty: it.qty,
+      unitPrice: it.unitPrice,
+      lineTotal: it.lineTotal,
+    })),
+  };
+
+  const [emailResult, smsResult] = await Promise.all([
+    sendOrderEmail(notif).catch((err) => ({
+      ok: false,
+      error: err instanceof Error ? err.message : "Email crashed",
+    })),
+    sendOrderSMS(notif).catch((err) => ({
+      ok: false,
+      error: err instanceof Error ? err.message : "SMS crashed",
+    })),
+  ]);
+
+  if (!emailResult.ok) {
+    console.warn("[orders] email notify failed:", emailResult.error);
+  }
+  if (!smsResult.ok) {
+    console.warn("[orders] sms notify failed:", smsResult.error);
+  }
+}
