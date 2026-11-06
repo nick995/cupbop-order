@@ -32,8 +32,9 @@ Cost: $0 (Vercel Hobby, Supabase Free, Resend Free, GitHub Actions free minutes)
 4. **Table Editor** → confirm `orders` exists and RLS is **enabled**.
 5. **Settings → API** → copy:
    - Project URL → `NEXT_PUBLIC_SUPABASE_URL`
-   - `anon` key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `service_role` key → `SUPABASE_SERVICE_ROLE_KEY` (secret, server only)
+   - `service_role` key → `SUPABASE_SERVICE_ROLE_KEY` (secret, server only — never `NEXT_PUBLIC_`)
+
+   The `anon` key isn't needed: the browser never talks to Supabase directly.
 
 > Free projects pause after ~7 days without activity. The hourly reminders
 > job queries the DB, which keeps it awake. If the project ever pauses anyway,
@@ -66,7 +67,6 @@ Leave all `TWILIO_*` vars unset — SMS stays off.
    | Name | Value |
    |---|---|
    | `NEXT_PUBLIC_SUPABASE_URL` | from step 1 |
-   | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | from step 1 |
    | `SUPABASE_SERVICE_ROLE_KEY` | from step 1 |
    | `RESEND_API_KEY` | from step 2 |
    | `ORDER_FROM_EMAIL` | from step 2 |
