@@ -11,7 +11,7 @@ import {
   loadCart,
   removeLine,
 } from "@/lib/cart";
-import { findBowlMod, findProtein, findSpicy } from "@/lib/menu";
+import { buildOrderItem, lineImage } from "@/lib/menu";
 
 interface CartDrawerProps {
   open: boolean;
@@ -131,12 +131,9 @@ export default function CartDrawer({ open, onClose }: CartDrawerProps) {
             ) : (
               <ul className="flex-1 divide-y divide-gray-200 overflow-y-auto px-5">
                 {lines.map((l) => {
-                  const protein = findProtein(l.proteinId);
-                  const spicy = findSpicy(l.spicyLevelId);
-                  const modNames = l.modIds
-                    .map((id) => findBowlMod(id)?.name)
-                    .filter(Boolean) as string[];
-                  if (!protein) return null;
+                  const item = buildOrderItem(l);
+                  const visual = lineImage(l);
+                  if (!item || !visual) return null;
                   return (
                     <li
                       key={l.id}
@@ -146,28 +143,28 @@ export default function CartDrawer({ open, onClose }: CartDrawerProps) {
                         <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-yellow-100 text-2xl">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
-                            src={protein.imageUrl}
+                            src={visual.imageUrl}
                             alt=""
                             className="h-full w-full object-contain"
                             onError={(e) => {
                               const t = e.currentTarget;
                               t.style.display = "none";
-                              if (t.parentElement) t.parentElement.textContent = protein.emoji;
+                              if (t.parentElement) t.parentElement.textContent = visual.emoji;
                             }}
                           />
                         </div>
                         <div className="min-w-0">
                           <div className="font-bold text-black">
-                            {l.qty}× {protein.name} Cupbop
+                            {l.qty}× {item.name}
                           </div>
-                          {spicy && (
+                          {item.spicyLevel && (
                             <div className="text-xs text-gray-600">
-                              {spicy.name}
+                              {item.spicyLevel}
                             </div>
                           )}
-                          {modNames.length > 0 && (
+                          {item.mods && item.mods.length > 0 && (
                             <div className="text-xs font-semibold text-amber-700">
-                              {modNames.join(", ")}
+                              {item.mods.join(", ")}
                             </div>
                           )}
                         </div>
@@ -179,7 +176,7 @@ export default function CartDrawer({ open, onClose }: CartDrawerProps) {
                         <button
                           type="button"
                           onClick={() => handleRemove(l.id)}
-                          aria-label={`Remove ${protein.name} Cupbop`}
+                          aria-label={`Remove ${item.name}`}
                           className="text-[11px] font-semibold text-red-600 underline-offset-2 hover:underline"
                         >
                           Remove

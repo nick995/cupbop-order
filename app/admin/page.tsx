@@ -3,6 +3,7 @@ import Link from "next/link";
 import { getSupabaseServerClient } from "@/lib/supabase";
 import { requireAdmin } from "@/lib/adminAuth";
 import { ORDER_STATUSES, OrderStatus, STORE_TIME_ZONE, storeToday } from "@/lib/orderActions";
+import { LineKind, itemDisplayName } from "@/lib/menu";
 import { logout, setOrderStatus } from "./actions";
 
 export const metadata: Metadata = {
@@ -25,7 +26,7 @@ interface OrderRow {
   special_instructions: string | null;
   status: OrderStatus;
   subtotal: number;
-  items: { qty: number; proteinName: string; spicyLevel: string; mods?: string[]; lineTotal: number }[];
+  items: { kind?: LineKind; qty: number; name?: string; proteinName?: string; spicyLevel?: string; mods?: string[]; lineTotal: number }[];
   created_at: string;
   reminder_count: number;
 }
@@ -160,7 +161,8 @@ export default async function AdminOrdersPage({
 }
 
 function OrderCard({ order: o }: { order: OrderRow }) {
-  const bowls = o.items.reduce((sum, it) => sum + (it.qty || 0), 0);
+  // Bowls + buffet servings (old orders have no `kind`; they were all bowls).
+  const bowls = o.items.reduce((sum, it) => sum + (it.kind === "extra" ? 0 : it.qty || 0), 0);
 
   return (
     <li className="rounded-2xl border-2 border-black bg-white shadow-[0_3px_0_#000]">
@@ -171,7 +173,7 @@ function OrderCard({ order: o }: { order: OrderRow }) {
           </p>
           <p className="text-sm">
             <span className="font-bold">{o.customer_name}</span>
-            <span className="text-gray-600"> · {o.order_type} · {bowls} bowl{bowls === 1 ? "" : "s"} · ${Number(o.subtotal).toFixed(2)}</span>
+            <span className="text-gray-600"> · {o.order_type} · {bowls} serving{bowls === 1 ? "" : "s"} · ${Number(o.subtotal).toFixed(2)}</span>
           </p>
         </div>
         <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-extrabold ${STATUS_STYLES[o.status]}`}>
@@ -193,7 +195,8 @@ function OrderCard({ order: o }: { order: OrderRow }) {
           {o.items.map((it, i) => (
             <li key={i} className="flex justify-between gap-3 py-0.5">
               <span>
-                <strong>{it.qty}×</strong> {it.proteinName} · {it.spicyLevel}
+                <strong>{it.qty}×</strong> {itemDisplayName(it)}
+                {it.spicyLevel && <> · {it.spicyLevel}</>}
                 {it.mods && it.mods.length > 0 && <span className="text-gray-600"> · {it.mods.join(", ")}</span>}
               </span>
               <span className="font-semibold">${Number(it.lineTotal).toFixed(2)}</span>

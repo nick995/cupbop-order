@@ -6,10 +6,12 @@
 // These functions only message the store owner.
 
 import { Resend } from "resend";
+import { itemDisplayName } from "@/lib/menu";
 
 interface OrderItemSummary {
-  proteinName: string;
-  spicyLevel: string;
+  name?: string;
+  proteinName?: string; // orders saved before `name` existed
+  spicyLevel?: string;
   mods?: string[];
   qty: number;
   unitPrice: number;
@@ -103,7 +105,8 @@ function renderOrderEmail(
 
   const itemsTextLines = order.items.map(
     (it) =>
-      `  ${it.qty}× ${it.proteinName} Cupbop · ${it.spicyLevel}` +
+      `  ${it.qty}× ${itemDisplayName(it)}` +
+      (it.spicyLevel ? ` · ${it.spicyLevel}` : "") +
       (it.mods && it.mods.length ? ` · Mods: ${it.mods.join(", ")}` : "") +
       `  ($${it.lineTotal.toFixed(2)})`
   );
@@ -136,12 +139,10 @@ function renderOrderEmail(
       (it) => `
         <tr>
           <td style="padding:8px;border-bottom:1px solid #eee">
-            <strong>${it.qty}×</strong> ${escapeHtml(it.proteinName)} Cupbop
-            <div style="color:#555;font-size:13px">${escapeHtml(it.spicyLevel)}${
-              it.mods && it.mods.length
-                ? ` &middot; ${escapeHtml(it.mods.join(", "))}`
-                : ""
-            }</div>
+            <strong>${it.qty}×</strong> ${escapeHtml(itemDisplayName(it))}
+            <div style="color:#555;font-size:13px">${escapeHtml(
+              [it.spicyLevel, ...(it.mods ?? [])].filter(Boolean).join(" · ")
+            )}</div>
           </td>
           <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;white-space:nowrap;font-weight:bold">
             $${it.lineTotal.toFixed(2)}
@@ -217,7 +218,7 @@ export async function sendOrderSMS(
   const client = twilio(accountSid, authToken);
 
   const summary = order.items
-    .map((it) => `${it.qty}x ${it.proteinName}`)
+    .map((it) => `${it.qty}x ${itemDisplayName(it)}`)
     .join(", ");
 
   const body =

@@ -1,6 +1,13 @@
 import { after, NextResponse } from "next/server";
 import { getSupabaseServerClient } from "@/lib/supabase";
 import { confirmUrlFor } from "@/lib/orderActions";
+import {
+  CATERING_MIN_SERVINGS,
+  LineSpec,
+  OrderItem,
+  buildOrderItem,
+  cateringServings,
+} from "@/lib/menu";
 import { dateUnavailableReason, getStoreSettings } from "@/lib/storeSettings";
 import {
   OrderEmailOptions,
@@ -8,19 +15,6 @@ import {
   sendOrderEmail,
   sendOrderSMS,
 } from "@/lib/notifications";
-
-interface OrderItem {
-  lineId: string;
-  proteinId: string;
-  proteinName: string;
-  spicyLevelId: string;
-  spicyLevel: string;
-  modIds: string[];
-  mods: string[];
-  qty: number;
-  unitPrice: number;
-  lineTotal: number;
-}
 
 interface OrderPayload {
   customer_name: string;
@@ -32,11 +26,11 @@ interface OrderPayload {
   delivery_address?: string;
   payment_method: "Cash" | "Credit Card";
   special_instructions: string;
-  subtotal: number;
-  items: OrderItem[];
+  lines: LineSpec[];
 }
 
-const CATERING_MIN_BOWLS = 15;
+// A priced order, built on the server from menu data.
+type PricedOrder = Omit<OrderPayload, "lines"> & { items: OrderItem[]; subtotal: number };
 
 function validate(body: unknown): body is OrderPayload {
   if (!body || typeof body !== "object") return false;
@@ -49,8 +43,9 @@ function validate(body: unknown): body is OrderPayload {
     typeof b.pickup_date === "string" &&
     typeof b.pickup_time === "string" &&
     (b.payment_method === "Cash" || b.payment_method === "Credit Card") &&
-    typeof b.subtotal === "number" &&
-    Array.isArray(b.items)
+    Array.isArray(b.lines) &&
+    b.lines.length > 0 &&
+    b.lines.length <= 100
   );
 }
 
@@ -69,15 +64,41 @@ export async function POST(request: Request) {
     );
   }
 
-  const order = payload;
+  // Price every line from the menu; never trust client prices or names.
+  const items = payload.lines.map((l) =>
+    l && typeof l === "object" ? buildOrderItem(l as LineSpec) : null
+  );
+  if (items.some((it) => it === null)) {
+    return NextResponse.json(
+      { error: "Your cart has an item we couldn't find. Please refresh the menu and try again." },
+      { status: 400 }
+    );
+  }
+  const order: PricedOrder = {
+    customer_name: payload.customer_name,
+    customer_phone: payload.customer_phone,
+    customer_email: payload.customer_email,
+    order_type: payload.order_type,
+    pickup_date: payload.pickup_date,
+    pickup_time: payload.pickup_time,
+    delivery_address: payload.delivery_address,
+    payment_method: payload.payment_method,
+    special_instructions: payload.special_instructions,
+    items: items as OrderItem[],
+    subtotal: Math.round(items.reduce((sum, it) => sum + it!.lineTotal, 0) * 100) / 100,
+  };
+
+  if (order.order_type === "Pickup" && order.items.some((it) => it.kind === "buffet")) {
+    return NextResponse.json({ error: "Buffet trays are for catering orders only." }, { status: 400 });
+  }
 
   // Server-side enforcement of catering rules
   if (order.order_type === "Catering") {
-    const totalBowls = order.items.reduce((sum, it) => sum + (it.qty || 0), 0);
-    if (totalBowls < CATERING_MIN_BOWLS) {
+    const servings = cateringServings(order.items);
+    if (servings < CATERING_MIN_SERVINGS) {
       return NextResponse.json(
         {
-          error: `Catering orders require at least ${CATERING_MIN_BOWLS} bowls.`,
+          error: `Catering orders require at least ${CATERING_MIN_SERVINGS} bowls or buffet servings.`,
         },
         { status: 400 }
       );
@@ -170,7 +191,7 @@ export async function POST(request: Request) {
 }
 
 async function notifyStore(
-  payload: OrderPayload & { orderId: string },
+  payload: PricedOrder & { orderId: string },
   emailOptions: OrderEmailOptions = {}
 ): Promise<void> {
   const notif: OrderNotificationPayload = {
@@ -185,14 +206,7 @@ async function notifyStore(
     payment_method: payload.payment_method,
     special_instructions: payload.special_instructions,
     subtotal: payload.subtotal,
-    items: payload.items.map((it) => ({
-      proteinName: it.proteinName,
-      spicyLevel: it.spicyLevel,
-      mods: it.mods,
-      qty: it.qty,
-      unitPrice: it.unitPrice,
-      lineTotal: it.lineTotal,
-    })),
+    items: payload.items,
   };
 
   const [emailResult, smsResult] = await Promise.all([

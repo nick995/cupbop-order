@@ -79,7 +79,9 @@ The `/checkout` page should include:
 
 ## Catering Rules
 
-- Catering orders require a minimum of 15 bowls total (sum of qty across all cart lines).
+- Catering orders require a minimum of 15 servings total: bowls + buffet servings (wings, sides, drinks and treats don't count).
+- Buffet trays are catering only.
+- Prices are computed on the server from `lib/menu.ts`; the client only sends item ids and quantities.
 - Catering orders are delivery only — there is NO pickup option for catering.
 - Catering orders require a delivery address.
 - Both the client (checkout form) and the server (`/api/orders`) enforce these rules.

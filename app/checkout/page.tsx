@@ -3,18 +3,16 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import StoreHeader from "@/components/StoreHeader";
-import { findBowlMod, findProtein, findSpicy, priceForProtein } from "@/lib/menu";
+import { CATERING_MIN_SERVINGS, buildOrderItem } from "@/lib/menu";
 import {
   CartLine,
-  cartCount,
   cartSubtotal,
+  cateringServings,
   clearCart,
   lineSubtotal,
   loadCart,
   removeLine,
 } from "@/lib/cart";
-
-const CATERING_MIN_BOWLS = 15;
 
 type OrderType = "Pickup" | "Catering";
 type PaymentMethod = "Cash" | "Credit Card";
@@ -102,9 +100,12 @@ function CheckoutInner() {
   }, []);
 
   const subtotal = useMemo(() => cartSubtotal(lines), [lines]);
-  const totalBowls = useMemo(() => cartCount(lines), [lines]);
-  const isCatering = form.order_type === "Catering";
-  const bowlsShort = isCatering ? Math.max(0, CATERING_MIN_BOWLS - totalBowls) : 0;
+  // Bowls + buffet servings; wings, sides and drinks don't count.
+  const totalBowls = useMemo(() => cateringServings(lines), [lines]);
+  // Buffet trays are catering only.
+  const hasBuffet = lines.some((l) => l.kind === "buffet");
+  const isCatering = form.order_type === "Catering" || hasBuffet;
+  const bowlsShort = isCatering ? Math.max(0, CATERING_MIN_SERVINGS - totalBowls) : 0;
   const minDate = availability?.earliestDate ?? todayISO();
   const dateProblem = !form.pickup_date
     ? null
@@ -131,9 +132,9 @@ function CheckoutInner() {
       return setError("Please enter a valid email address.");
 
     if (isCatering) {
-      if (totalBowls < CATERING_MIN_BOWLS)
+      if (totalBowls < CATERING_MIN_SERVINGS)
         return setError(
-          `Catering orders require at least ${CATERING_MIN_BOWLS} bowls. You currently have ${totalBowls}.`
+          `Catering orders require at least ${CATERING_MIN_SERVINGS} bowls or buffet servings. You currently have ${totalBowls}.`
         );
       if (!form.delivery_address.trim())
         return setError("Please enter the delivery address.");
@@ -152,23 +153,15 @@ function CheckoutInner() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...form,
-          subtotal,
-          items: lines.map((l) => {
-            const protein = findProtein(l.proteinId);
-            const spicy = findSpicy(l.spicyLevelId);
-            return {
-              lineId: l.id,
-              proteinId: l.proteinId,
-              proteinName: protein?.name ?? l.proteinId,
-              spicyLevelId: l.spicyLevelId,
-              spicyLevel: spicy?.fullName ?? l.spicyLevelId,
-              modIds: l.modIds,
-              mods: l.modIds.map((id) => findBowlMod(id)?.name ?? id),
-              qty: l.qty,
-              unitPrice: priceForProtein(l.proteinId),
-              lineTotal: lineSubtotal(l),
-            };
-          }),
+          order_type: isCatering ? "Catering" : form.order_type,
+          // The server prices these from the menu; it doesn't trust client totals.
+          lines: lines.map(({ kind, itemId, spicyLevelId, modIds, qty }) => ({
+            kind,
+            itemId,
+            spicyLevelId,
+            modIds,
+            qty,
+          })),
         }),
       });
 
@@ -207,12 +200,8 @@ function CheckoutInner() {
           </h2>
           <ul className="divide-y divide-gray-200">
             {lines.map((l) => {
-              const protein = findProtein(l.proteinId);
-              const spicy = findSpicy(l.spicyLevelId);
-              const modNames = l.modIds
-                .map((id) => findBowlMod(id)?.name)
-                .filter(Boolean) as string[];
-              if (!protein) return null;
+              const item = buildOrderItem(l);
+              if (!item) return null;
               return (
                 <li
                   key={l.id}
@@ -220,17 +209,14 @@ function CheckoutInner() {
                 >
                   <div className="min-w-0 flex-1">
                     <div className="font-bold text-black">
-                      {l.qty}× {protein.name} Cupbop
+                      {l.qty}× {item.name}
                     </div>
-                    {spicy && (
-                      <div className="text-xs text-gray-600">
-                        {spicy.name}
-                        {spicy.description ? ` · ${spicy.description}` : ""}
-                      </div>
+                    {item.spicyLevel && (
+                      <div className="text-xs text-gray-600">{item.spicyLevel}</div>
                     )}
-                    {modNames.length > 0 && (
+                    {item.mods && item.mods.length > 0 && (
                       <div className="text-xs font-semibold text-amber-700">
-                        Modifications: {modNames.join(", ")}
+                        Modifications: {item.mods.join(", ")}
                       </div>
                     )}
                   </div>
@@ -245,7 +231,7 @@ function CheckoutInner() {
                         setLines(next);
                         if (next.length === 0) router.replace("/menu");
                       }}
-                      aria-label={`Remove ${protein.name} Cupbop`}
+                      aria-label={`Remove ${item.name}`}
                       className="text-[11px] font-semibold text-red-600 underline-offset-2 hover:underline"
                     >
                       Remove
@@ -297,14 +283,21 @@ function CheckoutInner() {
 
           <Field label="Order type" required>
             <ToggleGroup
-              value={form.order_type}
-              onChange={(v) => onChange("order_type", v as OrderType)}
+              value={isCatering ? "Catering" : "Pickup"}
+              onChange={(v) => {
+                if (!hasBuffet) onChange("order_type", v as OrderType);
+              }}
               options={["Pickup", "Catering"]}
               labelMap={{
                 Pickup: "Pickup at store",
                 Catering: "Catering (delivery)",
               }}
             />
+            {hasBuffet && (
+              <span className="mt-1.5 block text-xs text-gray-600">
+                Buffet trays are catering (delivery) only.
+              </span>
+            )}
           </Field>
 
           {isCatering && (
@@ -318,7 +311,7 @@ function CheckoutInner() {
               {bowlsShort > 0 ? (
                 <>
                   Catering minimum is{" "}
-                  <strong>{CATERING_MIN_BOWLS} bowls</strong>. You have{" "}
+                  <strong>{CATERING_MIN_SERVINGS} bowls or buffet servings</strong>. You have{" "}
                   <strong>{totalBowls}</strong> — please add{" "}
                   <strong>{bowlsShort} more</strong>.
                   <button
@@ -330,7 +323,7 @@ function CheckoutInner() {
                   </button>
                 </>
               ) : (
-                <>✓ Catering minimum met ({totalBowls} bowls).</>
+                <>✓ Catering minimum met ({totalBowls} servings).</>
               )}
             </div>
           )}

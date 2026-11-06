@@ -76,6 +76,7 @@ function rowToPayload(row: any): OrderNotificationPayload {
     special_instructions: row.special_instructions ?? undefined,
     subtotal: Number(row.subtotal),
     items: (row.items ?? []).map((it: OrderNotificationPayload["items"][number]) => ({
+      name: it.name,
       proteinName: it.proteinName,
       spicyLevel: it.spicyLevel,
       mods: it.mods,

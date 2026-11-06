@@ -1,14 +1,12 @@
-import { priceForProtein } from "./menu";
+import { LineKind, LineSpec, buildOrderItem, cateringServings } from "./menu";
 
-export interface CartLine {
+export interface CartLine extends LineSpec {
   id: string;           // unique id for this line (e.g., crypto.randomUUID())
-  proteinId: string;
-  spicyLevelId: string;
+  kind: LineKind;
   modIds: string[];     // bowl mods: "no-rice", "no-noodle", "no-cabbage"
-  qty: number;
 }
 
-const CART_KEY = "cupbop_cart_v3";
+const CART_KEY = "cupbop_cart_v4";
 
 export const CART_UPDATED_EVENT = "cupbop:cart-updated";
 
@@ -34,11 +32,12 @@ export function loadCart(): CartLine[] {
       (l): l is CartLine =>
         l &&
         typeof l.id === "string" &&
-        typeof l.proteinId === "string" &&
-        typeof l.spicyLevelId === "string" &&
+        (l.kind === "bowl" || l.kind === "buffet" || l.kind === "extra") &&
+        typeof l.itemId === "string" &&
         Array.isArray(l.modIds) &&
         typeof l.qty === "number" &&
-        l.qty > 0
+        l.qty > 0 &&
+        buildOrderItem(l) !== null
     );
   } catch {
     return [];
@@ -71,7 +70,7 @@ export function newLineId(): string {
 }
 
 export function lineSubtotal(line: CartLine): number {
-  return priceForProtein(line.proteinId) * line.qty;
+  return buildOrderItem(line)?.lineTotal ?? 0;
 }
 
 export function cartSubtotal(lines: CartLine[]): number {
@@ -81,3 +80,5 @@ export function cartSubtotal(lines: CartLine[]): number {
 export function cartCount(lines: CartLine[]): number {
   return lines.reduce((sum, l) => sum + l.qty, 0);
 }
+
+export { cateringServings };

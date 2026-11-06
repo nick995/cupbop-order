@@ -8,6 +8,7 @@ export interface Protein {
   name: string;
   description: string;
   upcharge: number;       // extra cost added to BASE_PRICE
+  price?: number;         // fixed price instead of BASE_PRICE + upcharge
   emoji: string;          // fallback if image fails to load
   imageUrl: string;       // official Cupbop / Olo CDN image
   isGlutenFree?: boolean;
@@ -107,6 +108,15 @@ export const PROTEINS: Protein[] = [
     isGlutenFree: true,
   },
   {
+    id: "noodle",
+    name: "Noodle",
+    description: "100% sweet potato japchae noodles",
+    upcharge: 0,
+    price: 9.2,
+    emoji: "🍜",
+    imageUrl: "/images/menu/bowl-noodle.png",
+  },
+  {
     id: "beef",
     name: "Beef",
     description: "Korean-marinated BBQ beef (GF)",
@@ -182,5 +192,124 @@ export function findSpicy(id: string): SpicyLevel | undefined {
 
 export function priceForProtein(proteinId: string): number {
   const p = findProtein(proteinId);
-  return BASE_PRICE + (p?.upcharge ?? 0);
+  return p?.price ?? BASE_PRICE + (p?.upcharge ?? 0);
+}
+
+// ---------- Buffet (catering only) ----------
+// Same proteins served family-style in trays, priced per person like a bowl.
+
+export const BUFFET_PROTEINS: Protein[] = PROTEINS.filter((p) => p.id !== "no-protein").map((p) => ({
+  ...p,
+  isPopular: false,
+  imageUrl: `/images/menu/buffet-${p.id}.png`,
+}));
+
+export function findBuffet(id: string): Protein | undefined {
+  return BUFFET_PROTEINS.find((p) => p.id === id);
+}
+
+// ---------- Wings, sides, drinks, treats ----------
+
+export interface ExtraItem {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  category: (typeof EXTRA_CATEGORIES)[number];
+  imageUrl: string;
+  emoji: string;
+}
+
+export const EXTRA_CATEGORIES = ["Korean Wings", "Sides", "Drinks", "Snacks & Treats"] as const;
+
+export const EXTRAS: ExtraItem[] = [
+  { id: "wings-naked", name: "Naked Wings (No Sauce)", description: "50 pieces", price: 93.5, category: "Korean Wings", imageUrl: "/images/menu/wings-naked.png", emoji: "🍗" },
+  { id: "wings-seoul", name: "Seoul Sauce Wings", description: "50 pieces", price: 93.5, category: "Korean Wings", imageUrl: "/images/menu/wings-seoul.png", emoji: "🍗" },
+  { id: "wings-bbq", name: "BBQ Dry Rub Wings", description: "50 pieces", price: 93.5, category: "Korean Wings", imageUrl: "/images/menu/wings-bbq.png", emoji: "🍗" },
+  { id: "wings-yumyum", name: "YumYum Sauce Wings", description: "50 pieces", price: 93.5, category: "Korean Wings", imageUrl: "/images/menu/wings-yumyum.png", emoji: "🍗" },
+  { id: "mega-mandoo", name: "Mega Mandoo (12pc)", description: "Korean chicken potstickers", price: 10.15, category: "Sides", imageUrl: "/images/menu/mega-mandoo.png", emoji: "🥟" },
+  { id: "yogo-vera", name: "Yogo Vera", description: "Korean aloe vera drink", price: 3.65, category: "Drinks", imageUrl: "/images/menu/yogo-vera.png", emoji: "🧃" },
+  { id: "energy", name: "Energy", description: "Energy drink", price: 3.75, category: "Drinks", imageUrl: "/images/menu/energy.png", emoji: "⚡" },
+  { id: "bottled", name: "Bottled", description: "Bottled drinks", price: 3.45, category: "Drinks", imageUrl: "/images/menu/bottled.png", emoji: "🥤" },
+  { id: "cheesecake", name: "Cheesecake", description: "Slice of cheesecake", price: 4.95, category: "Snacks & Treats", imageUrl: "/images/menu/cheesecake.png", emoji: "🍰" },
+];
+
+export function findExtra(id: string): ExtraItem | undefined {
+  return EXTRAS.find((e) => e.id === id);
+}
+
+// ---------- Cart lines → priced order items ----------
+// Shared by the browser (display) and /api/orders (authoritative pricing).
+
+export type LineKind = "bowl" | "buffet" | "extra";
+
+export interface LineSpec {
+  kind: LineKind;
+  itemId: string;          // protein id (bowl / buffet) or extra id
+  spicyLevelId?: string;   // bowl / buffet
+  modIds?: string[];       // bowl only
+  qty: number;
+}
+
+export interface OrderItem {
+  kind: LineKind;
+  itemId: string;
+  name: string;            // "Rock Cupbop", "Rock Buffet", "Seoul Sauce Wings"
+  spicyLevelId?: string;
+  spicyLevel?: string;
+  modIds?: string[];
+  mods?: string[];
+  qty: number;
+  unitPrice: number;
+  lineTotal: number;
+}
+
+export const CATERING_MIN_SERVINGS = 15;
+export const MAX_LINE_QTY = 500;
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+// Returns null for unknown items or invalid quantities.
+export function buildOrderItem(line: LineSpec): OrderItem | null {
+  const qty = Math.floor(line.qty);
+  if (!Number.isFinite(qty) || qty < 1 || qty > MAX_LINE_QTY) return null;
+
+  if (line.kind === "extra") {
+    const extra = findExtra(line.itemId);
+    if (!extra) return null;
+    return { kind: "extra", itemId: extra.id, name: extra.name, qty, unitPrice: extra.price, lineTotal: round2(extra.price * qty) };
+  }
+
+  const protein = line.kind === "buffet" ? findBuffet(line.itemId) : findProtein(line.itemId);
+  const spicy = findSpicy(line.spicyLevelId ?? "");
+  if (!protein || !spicy) return null;
+  const mods = line.kind === "bowl" ? (line.modIds ?? []).map(findBowlMod).filter((m): m is BowlMod => !!m) : [];
+  const unitPrice = round2(priceForProtein(protein.id));
+  return {
+    kind: line.kind,
+    itemId: protein.id,
+    name: `${protein.name} ${line.kind === "buffet" ? "Buffet" : "Cupbop"}`,
+    spicyLevelId: spicy.id,
+    spicyLevel: spicy.fullName,
+    ...(line.kind === "bowl" && { modIds: mods.map((m) => m.id), mods: mods.map((m) => m.name) }),
+    qty,
+    unitPrice,
+    lineTotal: round2(unitPrice * qty),
+  };
+}
+
+// Bowls and buffet servings both count toward the catering minimum.
+export function cateringServings(lines: Pick<LineSpec, "kind" | "qty">[]): number {
+  return lines.reduce((sum, l) => sum + (l.kind === "extra" ? 0 : l.qty), 0);
+}
+
+// Display name for stored items, including orders saved before `name` existed.
+export function itemDisplayName(it: { name?: string; proteinName?: string }): string {
+  return it.name ?? `${it.proteinName ?? "Item"} Cupbop`;
+}
+
+export function lineImage(line: Pick<LineSpec, "kind" | "itemId">): { imageUrl: string; emoji: string } | undefined {
+  const found =
+    line.kind === "extra" ? findExtra(line.itemId) : line.kind === "buffet" ? findBuffet(line.itemId) : findProtein(line.itemId);
+  return found && { imageUrl: found.imageUrl, emoji: found.emoji };
 }

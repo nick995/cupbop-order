@@ -6,7 +6,13 @@ import { AnimatePresence, motion } from "framer-motion";
 import StoreHeader from "@/components/StoreHeader";
 import {
   BOWL_MODS,
+  BUFFET_PROTEINS,
+  CATERING_MIN_SERVINGS,
   DEFAULT_SPICY_ID,
+  EXTRA_CATEGORIES,
+  EXTRAS,
+  ExtraItem,
+  MAX_LINE_QTY,
   findSpicy,
   PROTEINS,
   Protein,
@@ -26,7 +32,7 @@ export default function MenuPage() {
   const router = useRouter();
   const [lines, setLines] = useState<CartLine[]>([]);
   const [mounted, setMounted] = useState(false);
-  const [activeProtein, setActiveProtein] = useState<Protein | null>(null);
+  const [active, setActive] = useState<Selection | null>(null);
   const [draftSpicy, setDraftSpicy] = useState<string>(DEFAULT_SPICY_ID);
   const [draftMods, setDraftMods] = useState<string[]>([]);
   const [draftQty, setDraftQty] = useState<number>(1);
@@ -36,14 +42,14 @@ export default function MenuPage() {
     setMounted(true);
   }, []);
 
-  const openCustomize = (p: Protein) => {
-    setActiveProtein(p);
+  const openCustomize = (selection: Selection) => {
+    setActive(selection);
     setDraftSpicy(DEFAULT_SPICY_ID);
     setDraftMods([]);
-    setDraftQty(1);
+    setDraftQty(selection.kind === "buffet" ? CATERING_MIN_SERVINGS : 1);
   };
 
-  const closeCustomize = () => setActiveProtein(null);
+  const closeCustomize = () => setActive(null);
 
   const toggleMod = (id: string) => {
     setDraftMods((prev) =>
@@ -52,12 +58,13 @@ export default function MenuPage() {
   };
 
   const addToCart = () => {
-    if (!activeProtein) return;
+    if (!active) return;
     const newLine: CartLine = {
       id: newLineId(),
-      proteinId: activeProtein.id,
-      spicyLevelId: draftSpicy,
-      modIds: draftMods,
+      kind: active.kind,
+      itemId: active.item.id,
+      ...(active.kind !== "extra" && { spicyLevelId: draftSpicy }),
+      modIds: active.kind === "bowl" ? draftMods : [],
       qty: draftQty,
     };
     setLines((prev) => {
@@ -82,70 +89,61 @@ export default function MenuPage() {
         <p className="mb-2 text-sm text-gray-600">
           Each Cupbop comes with rice, cabbage, and noodles.
         </p>
-        <p className="mb-6 text-sm font-semibold text-black">
+        <p className="mb-4 text-sm font-semibold text-black">
           1. Pick a protein → 2. Choose your spicy level → 3. Set quantity
         </p>
 
-        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {PROTEINS.map((p) => {
-            const price = priceForProtein(p.id);
-            return (
-              <li key={p.id} className="relative h-full">
-                {p.isPopular && (
-                  <span className="absolute -top-2 left-3 z-10 inline-flex items-center gap-1 rounded-full border-2 border-black bg-[#FFD200] px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-black shadow-[0_2px_0_#000]">
-                    ⭐ Popular
-                  </span>
-                )}
-                <button
-                  type="button"
-                  onClick={() => openCustomize(p)}
-                  className="flex h-full min-h-[110px] w-full items-center gap-3 rounded-2xl border-2 border-black bg-white p-4 text-left shadow-[0_4px_0_#000] transition active:translate-y-0.5 active:shadow-[0_1px_0_#000] hover:bg-yellow-50"
-                >
-                  <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-yellow-100 text-3xl overflow-hidden">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={p.imageUrl}
-                      alt={p.name}
-                      className="h-full w-full object-contain"
-                      loading="lazy"
-                      onError={(e) => {
-                        const target = e.currentTarget;
-                        target.style.display = "none";
-                        const parent = target.parentElement;
-                        if (parent) parent.textContent = p.emoji;
-                      }}
-                    />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <div className="flex min-w-0 items-center gap-1.5">
-                        <h2 className="truncate text-base font-bold text-black sm:text-lg">
-                          {p.name}
-                        </h2>
-                        {p.isGlutenFree && (
-                          <span className="shrink-0 rounded-md bg-green-600 px-1.5 py-0.5 text-[11px] font-extrabold leading-none text-white">
-                            GF
-                          </span>
-                        )}
-                      </div>
-                      <span className="shrink-0 text-sm font-bold text-black">
-                        ${price.toFixed(2)}
-                      </span>
-                    </div>
-                    <p className="mt-0.5 line-clamp-2 text-xs text-gray-600 sm:text-sm">
-                      {p.description}
-                    </p>
-                    {p.upcharge > 0 && (
-                      <p className="mt-1 text-[11px] font-semibold text-amber-700">
-                        +${p.upcharge.toFixed(2)} upcharge
-                      </p>
-                    )}
-                  </div>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+        <nav className="sticky top-0 z-20 -mx-4 mb-5 flex gap-2 overflow-x-auto bg-[#fffdf5]/95 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6">
+          {SECTIONS.map((sec) => (
+            <a
+              key={sec.id}
+              href={`#${sec.id}`}
+              className="shrink-0 rounded-full border-2 border-black bg-white px-3 py-1 text-xs font-bold text-black hover:bg-yellow-50"
+            >
+              {sec.title}
+            </a>
+          ))}
+        </nav>
+
+        <MenuSection id="bowls" title="Bowls">
+          {PROTEINS.map((p) => (
+            <ItemCard
+              key={p.id}
+              item={p}
+              price={priceForProtein(p.id)}
+              onClick={() => openCustomize({ kind: "bowl", item: p })}
+            />
+          ))}
+        </MenuSection>
+
+        <MenuSection
+          id="buffet"
+          title="Buffet"
+          note={`Catering only. Served family-style in trays, priced per person. Counts toward the ${CATERING_MIN_SERVINGS}-serving catering minimum.`}
+        >
+          {BUFFET_PROTEINS.map((p) => (
+            <ItemCard
+              key={p.id}
+              item={{ ...p, name: `${p.name} Buffet` }}
+              price={priceForProtein(p.id)}
+              priceSuffix="/person"
+              onClick={() => openCustomize({ kind: "buffet", item: p })}
+            />
+          ))}
+        </MenuSection>
+
+        {EXTRA_CATEGORIES.map((category) => (
+          <MenuSection key={category} id={sectionId(category)} title={category}>
+            {EXTRAS.filter((e) => e.category === category).map((e) => (
+              <ItemCard
+                key={e.id}
+                item={e}
+                price={e.price}
+                onClick={() => openCustomize({ kind: "extra", item: e })}
+              />
+            ))}
+          </MenuSection>
+        ))}
       </main>
 
       {/* Sticky checkout bar */}
@@ -168,9 +166,9 @@ export default function MenuPage() {
 
       {/* Customize sheet */}
       <AnimatePresence>
-        {activeProtein && (
+        {active && (
           <CustomizeSheet
-            protein={activeProtein}
+            selection={active}
             spicyId={draftSpicy}
             modIds={draftMods}
             qty={draftQty}
@@ -186,8 +184,114 @@ export default function MenuPage() {
   );
 }
 
+type Selection =
+  | { kind: "bowl" | "buffet"; item: Protein }
+  | { kind: "extra"; item: ExtraItem };
+
+const SECTIONS = [
+  { id: "bowls", title: "Bowls" },
+  { id: "buffet", title: "Buffet" },
+  ...EXTRA_CATEGORIES.map((c) => ({ id: sectionId(c), title: c })),
+];
+
+function sectionId(title: string): string {
+  return title.toLowerCase().replace(/[^a-z]+/g, "-");
+}
+
+function MenuSection({
+  id,
+  title,
+  note,
+  children,
+}: {
+  id: string;
+  title: string;
+  note?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section id={id} className="mb-8 scroll-mt-16">
+      <h2 className="mb-1 text-xl font-extrabold text-black">{title}</h2>
+      {note && <p className="mb-3 text-xs text-gray-600">{note}</p>}
+      <ul className={`grid grid-cols-1 gap-3 sm:grid-cols-2 ${note ? "" : "mt-3"}`}>{children}</ul>
+    </section>
+  );
+}
+
+function ItemCard({
+  item,
+  price,
+  priceSuffix,
+  onClick,
+}: {
+  item: Pick<Protein, "name" | "description" | "imageUrl" | "emoji"> &
+    Partial<Pick<Protein, "isPopular" | "isGlutenFree" | "upcharge">>;
+  price: number;
+  priceSuffix?: string;
+  onClick: () => void;
+}) {
+  return (
+    <li className="relative h-full">
+      {item.isPopular && (
+        <span className="absolute -top-2 left-3 z-10 inline-flex items-center gap-1 rounded-full border-2 border-black bg-[#FFD200] px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-black shadow-[0_2px_0_#000]">
+          ⭐ Popular
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex h-full min-h-[110px] w-full items-center gap-3 rounded-2xl border-2 border-black bg-white p-4 text-left shadow-[0_4px_0_#000] transition active:translate-y-0.5 active:shadow-[0_1px_0_#000] hover:bg-yellow-50"
+      >
+        <ItemImage src={item.imageUrl} alt={item.name} emoji={item.emoji} className="h-16 w-16 text-3xl" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <h3 className="truncate text-base font-bold text-black sm:text-lg">{item.name}</h3>
+              {item.isGlutenFree && (
+                <span className="shrink-0 rounded-md bg-green-600 px-1.5 py-0.5 text-[11px] font-extrabold leading-none text-white">
+                  GF
+                </span>
+              )}
+            </div>
+            <span className="shrink-0 text-sm font-bold text-black">
+              ${price.toFixed(2)}
+              {priceSuffix && <span className="text-[11px] font-semibold text-gray-600">{priceSuffix}</span>}
+            </span>
+          </div>
+          <p className="mt-0.5 line-clamp-2 text-xs text-gray-600 sm:text-sm">{item.description}</p>
+          {(item.upcharge ?? 0) > 0 && (
+            <p className="mt-1 text-[11px] font-semibold text-amber-700">
+              +${item.upcharge!.toFixed(2)} upcharge
+            </p>
+          )}
+        </div>
+      </button>
+    </li>
+  );
+}
+
+function ItemImage({ src, alt, emoji, className }: { src: string; alt: string; emoji: string; className: string }) {
+  return (
+    <div className={`flex shrink-0 items-center justify-center overflow-hidden rounded-xl bg-yellow-100 ${className}`}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt={alt}
+        className="h-full w-full object-contain"
+        loading="lazy"
+        onError={(e) => {
+          const target = e.currentTarget;
+          target.style.display = "none";
+          const parent = target.parentElement;
+          if (parent) parent.textContent = emoji;
+        }}
+      />
+    </div>
+  );
+}
+
 interface CustomizeSheetProps {
-  protein: Protein;
+  selection: Selection;
   spicyId: string;
   modIds: string[];
   qty: number;
@@ -199,7 +303,7 @@ interface CustomizeSheetProps {
 }
 
 function CustomizeSheet({
-  protein,
+  selection,
   spicyId,
   modIds,
   qty,
@@ -209,7 +313,10 @@ function CustomizeSheet({
   onClose,
   onAdd,
 }: CustomizeSheetProps) {
-  const unitPrice = priceForProtein(protein.id);
+  const { kind, item } = selection;
+  const unitPrice = selection.kind === "extra" ? selection.item.price : priceForProtein(selection.item.id);
+  const title = kind === "bowl" ? `${item.name} Cupbop` : kind === "buffet" ? `${item.name} Buffet` : item.name;
+  const minQty = 1;
   const total = unitPrice * qty;
   const spicy = findSpicy(spicyId);
 
@@ -238,40 +345,27 @@ function CustomizeSheet({
       >
         <div className="sticky top-0 z-10 flex items-center justify-between border-b-2 border-black bg-[#fffdf5] px-5 py-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-yellow-100 overflow-hidden">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={protein.imageUrl}
-                alt={protein.name}
-                className="h-full w-full object-contain"
-                onError={(e) => {
-                  const target = e.currentTarget;
-                  target.style.display = "none";
-                  const parent = target.parentElement;
-                  if (parent) {
-                    parent.textContent = protein.emoji;
-                    parent.classList.add("text-2xl");
-                  }
-                }}
-              />
-            </div>
+            <ItemImage src={item.imageUrl} alt={item.name} emoji={item.emoji} className="h-14 w-14 text-2xl" />
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-extrabold text-black">
-                  {protein.name} Cupbop
+                  {title}
                 </h2>
-                {protein.isGlutenFree && (
+                {"isGlutenFree" in item && item.isGlutenFree && (
                   <span className="rounded-md bg-green-600 px-1.5 py-0.5 text-[11px] font-extrabold leading-none text-white">
                     GF
                   </span>
                 )}
-                {protein.isPopular && (
+                {kind === "bowl" && item.isPopular && (
                   <span className="rounded-md bg-[#FFD200] border border-black px-1.5 py-0.5 text-[11px] font-extrabold leading-none text-black">
                     ⭐
                   </span>
                 )}
               </div>
-              <p className="text-xs text-gray-600">{protein.description}</p>
+              <p className="text-xs text-gray-600">
+                {item.description}
+                {kind === "buffet" && " · Served family-style, priced per person"}
+              </p>
             </div>
           </div>
           <button
@@ -285,6 +379,7 @@ function CustomizeSheet({
         </div>
 
         <div className="px-5 py-5">
+          {kind !== "extra" && (<>
           <h3 className="mb-2 text-sm font-bold uppercase tracking-wider text-black">
             Spicy Level
           </h3>
@@ -332,7 +427,9 @@ function CustomizeSheet({
               );
             })}
           </ul>
+          </>)}
 
+          {kind === "bowl" && (<>
           <h3 className="mt-6 mb-2 text-sm font-bold uppercase tracking-wider text-black">
             Customize Bowl
           </h3>
@@ -374,27 +471,38 @@ function CustomizeSheet({
               );
             })}
           </ul>
+          </>)}
 
-          <div className="mt-6 flex items-center justify-between">
+          <div className={`${kind === "extra" ? "" : "mt-6 "}flex items-center justify-between`}>
             <h3 className="text-sm font-bold uppercase tracking-wider text-black">
-              Quantity
+              {kind === "buffet" ? "People" : "Quantity"}
             </h3>
             <div className="inline-flex items-center gap-3 rounded-full border-2 border-black bg-white px-2 py-1 shadow-[0_2px_0_#000]">
               <button
                 type="button"
-                onClick={() => onQtyChange(Math.max(1, qty - 1))}
+                onClick={() => onQtyChange(Math.max(minQty, qty - 1))}
                 aria-label="Decrease"
-                disabled={qty <= 1}
+                disabled={qty <= minQty}
                 className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-lg font-bold text-black hover:bg-gray-100 disabled:opacity-40"
               >
                 −
               </button>
-              <span className="min-w-[2rem] text-center text-base font-bold">
-                {qty}
-              </span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={minQty}
+                max={MAX_LINE_QTY}
+                value={qty}
+                onChange={(e) => {
+                  const n = Math.floor(Number(e.target.value));
+                  onQtyChange(Number.isFinite(n) ? Math.min(MAX_LINE_QTY, Math.max(minQty, n)) : minQty);
+                }}
+                aria-label={kind === "buffet" ? "Number of people" : "Quantity"}
+                className="w-14 bg-transparent text-center text-base font-bold [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
+              />
               <button
                 type="button"
-                onClick={() => onQtyChange(Math.min(20, qty + 1))}
+                onClick={() => onQtyChange(Math.min(MAX_LINE_QTY, qty + 1))}
                 aria-label="Increase"
                 className="flex h-8 w-8 items-center justify-center rounded-full bg-[#FFD200] text-lg font-bold text-black hover:brightness-95"
               >
@@ -407,8 +515,8 @@ function CustomizeSheet({
         <div className="sticky bottom-0 z-10 border-t-2 border-black bg-[#fffdf5] px-5 py-4">
           <div className="mb-3 flex items-baseline justify-between text-sm">
             <span className="text-gray-700">
-              {qty} × {protein.name}
-              {spicy ? ` · ${spicy.name}` : ""}
+              {qty} × {item.name}
+              {kind !== "extra" && spicy ? ` · ${spicy.name}` : ""}
             </span>
             <span className="font-bold text-black">${total.toFixed(2)}</span>
           </div>
