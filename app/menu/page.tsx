@@ -8,7 +8,6 @@ import {
   BOWL_MODS,
   BUFFET_MIN_PEOPLE,
   BUFFET_PROTEINS,
-  CATERING_MIN_SERVINGS,
   DEFAULT_SPICY_ID,
   EXTRA_CATEGORIES,
   EXTRAS,
@@ -120,7 +119,7 @@ export default function MenuPage() {
         <MenuSection
           id="buffet"
           title="Buffet"
-          note={`Catering only, minimum ${BUFFET_MIN_PEOPLE} people per tray. Family-style trays with rice, cabbage mix and noodles, priced per person. Trays come as-is: no spicy level or changes. Counts toward the ${CATERING_MIN_SERVINGS}-serving catering minimum.`}
+          note={`Catering only, minimum ${BUFFET_MIN_PEOPLE} people per tray. Family-style trays with rice, cabbage mix and noodles, priced per person. Trays come as-is: no spicy level or changes.`}
         >
           {BUFFET_PROTEINS.map((p) => (
             <ItemCard
