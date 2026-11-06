@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { getSupabaseServerClient } from "@/lib/supabase";
 import {
   OrderNotificationPayload,
@@ -95,12 +95,20 @@ export async function POST(request: Request) {
     !!process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!hasSupabase) {
+    // In production a missing DB config must not look like a successful order.
+    if (process.env.NODE_ENV === "production") {
+      console.error("[orders] Supabase env vars missing in production — rejecting order.");
+      return NextResponse.json(
+        { error: "Ordering is temporarily unavailable. Please call the store." },
+        { status: 503 }
+      );
+    }
     console.warn(
       "[orders] Supabase env vars missing — skipping DB insert. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to enable persistence."
     );
     const localId = `local-${Date.now()}`;
     // Still try to send notifications even without DB so the store can be alerted.
-    void notifyStore({ ...order, orderId: localId });
+    after(() => notifyStore({ ...order, orderId: localId }));
     return NextResponse.json({ id: localId, stored: false });
   }
 
@@ -133,9 +141,10 @@ export async function POST(request: Request) {
       );
     }
 
-    // Notify the store (email + SMS). Fire-and-forget — don't block the
-    // customer's confirmation if the notifier fails.
-    void notifyStore({ ...order, orderId: data.id });
+    // Notify the store (email + SMS) after the response is sent. `after()`
+    // keeps the serverless function alive until it finishes; a bare
+    // fire-and-forget promise can be cut off on Vercel.
+    after(() => notifyStore({ ...order, orderId: data.id }));
 
     return NextResponse.json({ id: data.id, stored: true });
   } catch (err) {

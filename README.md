@@ -47,14 +47,11 @@ Until Supabase is configured, the checkout flow still works end-to-end — order
    - `ORDER_FROM_EMAIL`
    - `STORE_NOTIFICATION_EMAIL`
 
-(Email sending is wired up as a TODO in `app/api/orders/route.ts` — implement when ready.)
+Email is sent from `lib/notifications.ts` after each order is saved. SMS (Twilio) stays off unless its env vars are set.
 
-## Deploying to Vercel
+## Deploying
 
-1. Push this repo to GitHub.
-2. Go to https://vercel.com → New Project → import the repo.
-3. Add the environment variables from `.env.local` in the Vercel project settings.
-4. Deploy. Vercel auto-detects Next.js.
+See [docs/DEPLOY.md](docs/DEPLOY.md) — Vercel + Supabase + Resend at cupbop.mingyudev.com.
 
 ## Project structure
 
@@ -64,7 +61,8 @@ app/
   menu/page.tsx              ← Menu
   checkout/page.tsx          ← Order form
   order-confirmation/page.tsx
-  api/orders/route.ts        ← Save order to Supabase
+  api/orders/route.ts        ← Save order to Supabase + email the store
+  api/health/route.ts        ← Health check (daily Vercel cron keeps Supabase awake)
   layout.tsx, globals.css
 
 components/
