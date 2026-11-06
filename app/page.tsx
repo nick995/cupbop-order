@@ -57,6 +57,16 @@ export default function HomePage() {
           <span>(385) 392-4286</span>
         </a>
       </div>
+
+      {/* Staff entry — kept low-key so customers aren't distracted */}
+      <footer className="absolute bottom-0 left-0 right-0 z-10 pb-4 text-center">
+        <Link
+          href="/admin"
+          className="text-xs font-semibold text-gray-500 underline-offset-2 hover:text-black hover:underline"
+        >
+          Staff login
+        </Link>
+      </footer>
     </main>
   );
 }
