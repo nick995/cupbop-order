@@ -113,3 +113,56 @@ export async function removeBlackoutDate(formData: FormData): Promise<void> {
     "Blackout date removed."
   );
 }
+
+// --- Set password from a Supabase invite / password-reset email ---
+// The email link lands on /admin/set-password with an access token in the URL
+// hash (or a token_hash query param). We verify it, set the password with the
+// service client, and sign the person in.
+
+export async function setPasswordFromInvite(
+  _prev: { error?: string },
+  formData: FormData
+): Promise<{ error?: string }> {
+  const accessToken = String(formData.get("access_token") ?? "");
+  const tokenHash = String(formData.get("token_hash") ?? "");
+  const type = String(formData.get("type") ?? "invite");
+  const password = String(formData.get("password") ?? "");
+  const confirm = String(formData.get("confirm") ?? "");
+  const expired = { error: "This link is invalid or has expired. Ask an admin to send a new invite." };
+
+  if (password.length < 8) return { error: "Use at least 8 characters." };
+  if (password !== confirm) return { error: "Passwords don't match." };
+
+  const supabase = getSupabaseServerClient();
+  let user: { id: string; email?: string } | null = null;
+  if (accessToken) {
+    const { data, error } = await supabase.auth.getUser(accessToken);
+    if (!error) user = data.user;
+  } else if (tokenHash) {
+    const { data, error } = await supabase.auth.verifyOtp({
+      token_hash: tokenHash,
+      type: type === "recovery" ? "recovery" : "invite",
+    });
+    if (!error) user = data.user;
+  }
+  if (!user?.email) return expired;
+  if (!isAllowedAdmin(user.email)) {
+    return { error: "This email isn't on the staff list yet. Ask an admin to add it to ADMIN_EMAILS." };
+  }
+
+  const { error } = await supabase.auth.admin.updateUserById(user.id, { password });
+  if (error) {
+    console.error("[admin] set password failed", error);
+    return { error: "Could not set the password. Try a longer one, or ask for a new invite." };
+  }
+
+  const store = await cookies();
+  store.set(ADMIN_COOKIE, createSessionValue(user.email), {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: SESSION_DAYS * 86_400,
+  });
+  redirect("/admin");
+}

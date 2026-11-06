@@ -1,10 +1,12 @@
 import Image from "next/image";
 import Link from "next/link";
 import HomeTagline from "@/components/HomeTagline";
+import AuthLinkForwarder from "@/components/AuthLinkForwarder";
 
 export default function HomePage() {
   return (
     <main className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-[#fffdf5] px-6 py-12 text-center">
+      <AuthLinkForwarder />
       {/* Background glow blobs */}
       <div className="pointer-events-none absolute -left-20 -top-20 h-72 w-72 rounded-full bg-yellow-300 opacity-55 blur-3xl" />
       <div className="pointer-events-none absolute -bottom-16 -right-16 h-60 w-60 rounded-full bg-yellow-200 opacity-55 blur-3xl" />

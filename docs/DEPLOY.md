@@ -33,9 +33,15 @@ Any status other than `New` stops reminders.
 Sign-in is email + password via Supabase Auth, limited to `ADMIN_EMAILS`.
 To add a person:
 
-1. Supabase → **Authentication → Users → Add user → Create new user** →
-   their email + a password, tick **Auto Confirm User**.
-2. Add their email to `ADMIN_EMAILS` in Vercel (comma-separated) → Redeploy.
+1. Add their email to `ADMIN_EMAILS` in Vercel (comma-separated) → Redeploy.
+2. Supabase → **Authentication → Users → Add user**, either:
+   - **Send invitation**: they click the email link, land on
+     `/admin/set-password`, choose a password and are signed in; or
+   - **Create new user**: their email + a password, tick **Auto Confirm User**,
+     and send them the password yourself.
+
+Invite links rely on Supabase → **Authentication → URL Configuration → Site URL**
+being `https://cupbop.mingyudev.com` (not the default localhost).
 
 To remove someone: take them out of `ADMIN_EMAILS` (locks them out on the next
 request) and delete the user in Supabase.
