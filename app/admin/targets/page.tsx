@@ -9,12 +9,50 @@ import {
   directionsUrl,
 } from "@/lib/targets";
 import { deleteTarget, updateTarget } from "../actions";
+import { formatDay } from "@/lib/storeSettings";
 import TargetsMap from "./TargetsMap";
 
 export const metadata: Metadata = {
   title: "Catering targets — Cupbop Park City admin",
   robots: { index: false, follow: false },
 };
+
+interface LinkedOrder {
+  id: string;
+  target_id: string;
+  customer_name: string;
+  pickup_date: string;
+  subtotal: number;
+  status: string;
+}
+
+function TargetOrders({ orders, sales }: { orders: LinkedOrder[]; sales: number }) {
+  if (orders.length === 0) {
+    return (
+      <p className="mt-2 text-xs text-gray-500">
+        No orders yet. Link one from its order card on the Orders page (Details → Sales target).
+      </p>
+    );
+  }
+  const counted = orders.filter((o) => o.status !== "Cancelled").length;
+  return (
+    <details className="mt-2 rounded-xl bg-green-50 px-3 py-2 text-sm">
+      <summary className="cursor-pointer select-none font-bold text-green-900">
+        {counted} order{counted === 1 ? "" : "s"} · ${sales.toFixed(2)} · last {formatDay(orders[0].pickup_date)}
+      </summary>
+      <ul className="mt-1 space-y-0.5">
+        {orders.map((o) => (
+          <li key={o.id} className="flex justify-between gap-3">
+            <Link href={`/admin?view=all#order-${o.id}`} className={`underline ${o.status === "Cancelled" ? "text-gray-400 line-through" : ""}`}>
+              {formatDay(o.pickup_date)} · {o.customer_name}
+            </Link>
+            <span className="font-semibold">${Number(o.subtotal).toFixed(2)}</span>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
 
 export default async function TargetsPage({
   searchParams,
@@ -27,12 +65,27 @@ export default async function TargetsPage({
   const error = typeof params.error === "string" ? params.error : null;
   const statusFilter = TARGET_STATUSES.find((s) => s === params.status);
 
-  const { data, error: loadError } = await getSupabaseServerClient()
-    .from("catering_targets")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(500);
+  const supabase = getSupabaseServerClient();
+  const [{ data, error: loadError }, { data: orderRows }] = await Promise.all([
+    supabase.from("catering_targets").select("*").order("created_at", { ascending: false }).limit(500),
+    supabase
+      .from("orders")
+      .select("id, target_id, customer_name, pickup_date, subtotal, status")
+      .not("target_id", "is", null)
+      .order("pickup_date", { ascending: false })
+      .limit(1000),
+  ]);
   const all = (data ?? []) as CateringTarget[];
+
+  // Orders credited to each target. Cancelled orders are listed but not counted in sales.
+  const ordersByTarget = new Map<string, LinkedOrder[]>();
+  for (const o of (orderRows ?? []) as LinkedOrder[]) {
+    ordersByTarget.set(o.target_id, [...(ordersByTarget.get(o.target_id) ?? []), o]);
+  }
+  const salesOf = (list: LinkedOrder[] = []) =>
+    list.filter((o) => o.status !== "Cancelled").reduce((sum, o) => sum + Number(o.subtotal), 0);
+  const totalSales = salesOf((orderRows ?? []) as LinkedOrder[]);
+  const totalOrders = ((orderRows ?? []) as LinkedOrder[]).filter((o) => o.status !== "Cancelled").length;
   const targets = statusFilter ? all.filter((t) => t.status === statusFilter) : all;
   const counts = Object.fromEntries(TARGET_STATUSES.map((s) => [s, all.filter((t) => t.status === s).length]));
 
@@ -60,6 +113,13 @@ export default async function TargetsPage({
         {(error || loadError) && (
           <p className="mb-4 rounded-xl border-2 border-black bg-red-100 px-4 py-3 text-sm font-bold text-red-900">
             {error ?? "Could not load the list. Make sure db/schema.sql has been run in Supabase."}
+          </p>
+        )}
+
+        {totalOrders > 0 && (
+          <p className="mb-4 rounded-xl border-2 border-black bg-white px-4 py-3 text-sm">
+            Sales from targets: <strong>${totalSales.toFixed(2)}</strong> across <strong>{totalOrders}</strong> order
+            {totalOrders === 1 ? "" : "s"}
           </p>
         )}
 
@@ -119,6 +179,8 @@ export default async function TargetsPage({
                   {t.status}
                 </span>
               </div>
+
+              <TargetOrders orders={ordersByTarget.get(t.id) ?? []} sales={salesOf(ordersByTarget.get(t.id))} />
 
               <form action={updateTarget} className="mt-3">
                 <input type="hidden" name="id" value={t.id} />

@@ -227,6 +227,28 @@ export async function updateTarget(formData: FormData): Promise<void> {
   targetsDone(formData.has("notes") ? "Notes saved." : "Status updated.", !error);
 }
 
+// Attribute an order to a sales target. Linking also marks the target a Customer.
+export async function setOrderTarget(formData: FormData): Promise<void> {
+  await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  const targetId = String(formData.get("target_id") ?? "") || null;
+  if (!id) return;
+
+  const supabase = getSupabaseServerClient();
+  const { error } = await supabase.from("orders").update({ target_id: targetId }).eq("id", id);
+  if (error) console.error("[admin] link order to target failed", id, error);
+  if (!error && targetId) {
+    const { error: statusError } = await supabase
+      .from("catering_targets")
+      .update({ status: "Customer" })
+      .eq("id", targetId)
+      .neq("status", "Customer");
+    if (statusError) console.error("[admin] mark target customer failed", targetId, statusError);
+  }
+  revalidatePath("/admin");
+  revalidatePath("/admin/targets");
+}
+
 export async function deleteTarget(formData: FormData): Promise<void> {
   await requireAdmin();
   const id = String(formData.get("id") ?? "");

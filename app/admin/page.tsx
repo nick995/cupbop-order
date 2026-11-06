@@ -4,7 +4,7 @@ import { getSupabaseServerClient } from "@/lib/supabase";
 import { requireAdmin } from "@/lib/adminAuth";
 import { ORDER_STATUSES, OrderStatus, STORE_TIME_ZONE, storeToday } from "@/lib/orderActions";
 import { LineKind, itemDisplayName } from "@/lib/menu";
-import { logout, setOrderStatus } from "./actions";
+import { logout, setOrderStatus, setOrderTarget } from "./actions";
 
 export const metadata: Metadata = {
   title: "Orders — Cupbop Park City admin",
@@ -29,7 +29,10 @@ interface OrderRow {
   items: { kind?: LineKind; qty: number; name?: string; proteinName?: string; spicyLevel?: string; mods?: string[]; lineTotal: number }[];
   created_at: string;
   reminder_count: number;
+  target_id?: string | null;
 }
+
+type TargetOption = { id: string; name: string };
 
 const STATUS_STYLES: Record<OrderStatus, string> = {
   New: "bg-red-600 text-white",
@@ -61,15 +64,18 @@ export default async function AdminOrdersPage({
   }
   if (statusFilter) query = query.eq("status", statusFilter);
 
-  const [{ data, error }, { count: needsConfirm }] = await Promise.all([
+  const [{ data, error }, { count: needsConfirm }, { data: targetRows }] = await Promise.all([
     query,
     supabase
       .from("orders")
       .select("id", { count: "exact", head: true })
       .eq("status", "New")
       .gte("pickup_date", today),
+    // For the "Sales target" picker; empty if the targets table doesn't exist yet.
+    supabase.from("catering_targets").select("id, name").order("name").limit(500),
   ]);
   const orders = (data ?? []) as OrderRow[];
+  const targetOptions = (targetRows ?? []) as TargetOption[];
 
   const href = (next: { view?: View; status?: string }) => {
     const p = new URLSearchParams();
@@ -155,7 +161,7 @@ export default async function AdminOrdersPage({
 
         <ul className="space-y-3">
           {orders.map((o) => (
-            <OrderCard key={o.id} order={o} />
+            <OrderCard key={o.id} order={o} targets={targetOptions} />
           ))}
         </ul>
       </main>
@@ -163,12 +169,13 @@ export default async function AdminOrdersPage({
   );
 }
 
-function OrderCard({ order: o }: { order: OrderRow }) {
+function OrderCard({ order: o, targets }: { order: OrderRow; targets: TargetOption[] }) {
+  const target = o.target_id ? targets.find((t) => t.id === o.target_id) : undefined;
   // Bowls + buffet servings (old orders have no `kind`; they were all bowls).
   const bowls = o.items.reduce((sum, it) => sum + (it.kind === "extra" ? 0 : it.qty || 0), 0);
 
   return (
-    <li className="rounded-2xl border-2 border-black bg-white shadow-[0_3px_0_#000]">
+    <li id={`order-${o.id}`} className="scroll-mt-20 rounded-2xl border-2 border-black bg-white shadow-[0_3px_0_#000]">
       <div className="flex items-start justify-between gap-3 px-4 pt-3">
         <div>
           <p className="text-base font-extrabold">
@@ -178,6 +185,11 @@ function OrderCard({ order: o }: { order: OrderRow }) {
             <span className="font-bold">{o.customer_name}</span>
             <span className="text-gray-600"> · {o.order_type} · {bowls} serving{bowls === 1 ? "" : "s"} · ${Number(o.subtotal).toFixed(2)}</span>
           </p>
+          {target && (
+            <Link href={`/admin/targets#target-${target.id}`} className="mt-0.5 inline-block text-xs font-bold text-green-800 underline">
+              🎯 {target.name}
+            </Link>
+          )}
         </div>
         <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-extrabold ${STATUS_STYLES[o.status]}`}>
           {o.status}
@@ -208,6 +220,24 @@ function OrderCard({ order: o }: { order: OrderRow }) {
         </ul>
         {o.special_instructions && (
           <p className="mt-2 rounded-lg bg-[#fff8d8] px-3 py-2 text-sm"><strong>Notes:</strong> {o.special_instructions}</p>
+        )}
+        {targets.length > 0 && (
+          <form action={setOrderTarget} className="mt-3 flex items-center gap-2 border-t border-gray-200 pt-3 text-sm">
+            <input type="hidden" name="id" value={o.id} />
+            <label htmlFor={`target-${o.id}`} className="shrink-0 font-bold">Sales target</label>
+            <select
+              id={`target-${o.id}`}
+              name="target_id"
+              defaultValue={o.target_id ?? ""}
+              className="min-w-0 flex-1 rounded-lg border-2 border-black bg-white px-2 py-1"
+            >
+              <option value="">None</option>
+              {targets.map((t) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+            <button className="shrink-0 rounded-full border-2 border-black bg-[#FFD200] px-3 py-1 text-xs font-bold">Save</button>
+          </form>
         )}
       </details>
 

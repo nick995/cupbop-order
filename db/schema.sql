@@ -94,3 +94,8 @@ create trigger trg_catering_targets_updated_at
   for each row execute function public.set_updated_at();
 
 alter table public.catering_targets enable row level security;
+
+-- Orders can be credited to a catering target (sales attribution).
+alter table public.orders
+  add column if not exists target_id uuid references public.catering_targets(id) on delete set null;
+create index if not exists orders_target_id_idx on public.orders (target_id);
