@@ -66,6 +66,7 @@ app/
   api/cron/reminders/        ← Hourly reminder emails for unconfirmed orders
   api/orders/confirm/        ← Marks an order Confirmed (from the email link)
   orders/confirm/page.tsx    ← Staff confirm page
+  admin/                     ← Staff dashboard: all orders + status buttons (login required)
   layout.tsx, globals.css
 
 components/

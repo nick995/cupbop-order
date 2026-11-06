@@ -159,7 +159,7 @@ function renderOrderEmail(
     </div>
     <div style="padding:20px">
       ${reminderNote ? `<p style="margin:0 0 16px;background:#ffe4e4;border:1px solid #d33;padding:10px 12px;border-radius:8px;font-size:14px;font-weight:bold">${reminderNote}</p>` : ""}
-      ${confirmUrl ? `<p style="margin:0 0 20px;text-align:center"><a href="${escapeHtml(confirmUrl)}" style="display:inline-block;background:#111;color:#FFD200;padding:12px 24px;border-radius:999px;font-weight:800;text-decoration:none">Confirm order</a></p>` : ""}
+      ${confirmUrl ? `<p style="margin:0 0 20px;text-align:center"><a href="${escapeHtml(confirmUrl)}" style="display:inline-block;background:#111;color:#FFD200;padding:12px 24px;border-radius:999px;font-weight:800;text-decoration:none">Confirm order</a><br><a href="${escapeHtml(new URL("/admin", confirmUrl).toString())}" style="display:inline-block;margin-top:10px;color:#555;font-size:13px">View all orders</a></p>` : ""}
       <table style="width:100%;font-size:14px;border-collapse:collapse">
         <tr><td style="padding:4px 0;color:#555">Order ID</td><td style="padding:4px 0;text-align:right;font-family:monospace">${escapeHtml(order.orderId)}</td></tr>
         <tr><td style="padding:4px 0;color:#555">Customer</td><td style="padding:4px 0;text-align:right;font-weight:bold">${escapeHtml(order.customer_name)}</td></tr>

@@ -24,6 +24,25 @@ Cost: $0 (Vercel Hobby, Supabase Free, Resend Free, GitHub Actions free minutes)
   also stops reminders.
 - Cadence lives in `lib/orderActions.ts`.
 
+## Admin dashboard (`/admin`)
+
+`https://cupbop.mingyudev.com/admin` lists all orders (upcoming / past / all,
+filter by status) and lets staff set the status: Confirm, Ready, Completed, Cancel.
+Any status other than `New` stops reminders.
+
+Sign-in is email + password via Supabase Auth, limited to `ADMIN_EMAILS`.
+To add a person:
+
+1. Supabase → **Authentication → Users → Add user → Create new user** →
+   their email + a password, tick **Auto Confirm User**.
+2. Add their email to `ADMIN_EMAILS` in Vercel (comma-separated) → Redeploy.
+
+To remove someone: take them out of `ADMIN_EMAILS` (locks them out on the next
+request) and delete the user in Supabase.
+
+One-time: Supabase → **Authentication → Sign In / Providers** → turn **off**
+"Allow new users to sign up", so only accounts you create exist.
+
 ## 1. Supabase
 
 1. In the Supabase dashboard, pause or delete the project you're retiring so a free slot opens.
@@ -74,6 +93,7 @@ Leave all `TWILIO_*` vars unset — SMS stays off.
    | `ORDER_ACTION_SECRET` | run `openssl rand -hex 32` |
    | `CRON_SECRET` | run `openssl rand -hex 32` (a different value) |
    | `SITE_URL` | `https://cupbop.mingyudev.com` |
+   | `ADMIN_EMAILS` | `mingyu995@gmail.com,mjung@cupbop.com,lryan@cupbop.com` |
 
 4. **Deploy**. Every later push to `main` auto-deploys; branches get preview URLs.
 5. **Settings → Domains → Add** `cupbop.mingyudev.com`. Vercel shows the CNAME target to use.

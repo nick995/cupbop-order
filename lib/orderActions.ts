@@ -4,6 +4,15 @@ import { createHmac, timingSafeEqual } from "crypto";
 
 export const STORE_TIME_ZONE = "America/Denver";
 
+// Matches the check constraint in db/schema.sql.
+export const ORDER_STATUSES = ["New", "Confirmed", "Ready", "Completed", "Cancelled"] as const;
+export type OrderStatus = (typeof ORDER_STATUSES)[number];
+
+// Today's date in the store's time zone, as YYYY-MM-DD.
+export function storeToday(now: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: STORE_TIME_ZONE }).format(now);
+}
+
 // Reminder cadence: every 24h while the order is more than 48h away,
 // every 12h once it's within 48h. Stops when the order time has passed.
 export const NEAR_WINDOW_HOURS = 48;
