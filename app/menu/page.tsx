@@ -63,7 +63,7 @@ export default function MenuPage() {
       id: newLineId(),
       kind: active.kind,
       itemId: active.item.id,
-      ...(active.kind !== "extra" && { spicyLevelId: draftSpicy }),
+      ...(active.kind === "bowl" && { spicyLevelId: draftSpicy }),
       modIds: active.kind === "bowl" ? draftMods : [],
       qty: draftQty,
     };
@@ -119,7 +119,7 @@ export default function MenuPage() {
         <MenuSection
           id="buffet"
           title="Buffet"
-          note={`Catering only. Served family-style in trays, priced per person. Counts toward the ${CATERING_MIN_SERVINGS}-serving catering minimum.`}
+          note={`Catering only. Family-style trays with rice, cabbage mix and noodles, priced per person. Trays come as-is: no spicy level or changes. Counts toward the ${CATERING_MIN_SERVINGS}-serving catering minimum.`}
         >
           {BUFFET_PROTEINS.map((p) => (
             <ItemCard
@@ -364,7 +364,7 @@ function CustomizeSheet({
               </div>
               <p className="text-xs text-gray-600">
                 {item.description}
-                {kind === "buffet" && " · Served family-style, priced per person"}
+                {kind === "buffet" && " · Family-style tray, priced per person. Comes as-is."}
               </p>
             </div>
           </div>
@@ -379,7 +379,7 @@ function CustomizeSheet({
         </div>
 
         <div className="px-5 py-5">
-          {kind !== "extra" && (<>
+          {kind === "bowl" && (<>
           <h3 className="mb-2 text-sm font-bold uppercase tracking-wider text-black">
             Spicy Level
           </h3>
@@ -473,7 +473,7 @@ function CustomizeSheet({
           </ul>
           </>)}
 
-          <div className={`${kind === "extra" ? "" : "mt-6 "}flex items-center justify-between`}>
+          <div className={`${kind === "bowl" ? "mt-6 " : ""}flex items-center justify-between`}>
             <h3 className="text-sm font-bold uppercase tracking-wider text-black">
               {kind === "buffet" ? "People" : "Quantity"}
             </h3>
@@ -516,7 +516,7 @@ function CustomizeSheet({
           <div className="mb-3 flex items-baseline justify-between text-sm">
             <span className="text-gray-700">
               {qty} × {item.name}
-              {kind !== "extra" && spicy ? ` · ${spicy.name}` : ""}
+              {kind === "bowl" && spicy ? ` · ${spicy.name}` : ""}
             </span>
             <span className="font-bold text-black">${total.toFixed(2)}</span>
           </div>

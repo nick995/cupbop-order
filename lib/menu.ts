@@ -246,7 +246,7 @@ export type LineKind = "bowl" | "buffet" | "extra";
 export interface LineSpec {
   kind: LineKind;
   itemId: string;          // protein id (bowl / buffet) or extra id
-  spicyLevelId?: string;   // bowl / buffet
+  spicyLevelId?: string;   // bowl only (buffet trays come as-is)
   modIds?: string[];       // bowl only
   qty: number;
 }
@@ -280,18 +280,26 @@ export function buildOrderItem(line: LineSpec): OrderItem | null {
     return { kind: "extra", itemId: extra.id, name: extra.name, qty, unitPrice: extra.price, lineTotal: round2(extra.price * qty) };
   }
 
-  const protein = line.kind === "buffet" ? findBuffet(line.itemId) : findProtein(line.itemId);
+  if (line.kind === "buffet") {
+    const tray = findBuffet(line.itemId);
+    if (!tray) return null;
+    const unitPrice = round2(priceForProtein(tray.id));
+    return { kind: "buffet", itemId: tray.id, name: `${tray.name} Buffet`, qty, unitPrice, lineTotal: round2(unitPrice * qty) };
+  }
+
+  const protein = findProtein(line.itemId);
   const spicy = findSpicy(line.spicyLevelId ?? "");
   if (!protein || !spicy) return null;
-  const mods = line.kind === "bowl" ? (line.modIds ?? []).map(findBowlMod).filter((m): m is BowlMod => !!m) : [];
+  const mods = (line.modIds ?? []).map(findBowlMod).filter((m): m is BowlMod => !!m);
   const unitPrice = round2(priceForProtein(protein.id));
   return {
-    kind: line.kind,
+    kind: "bowl",
     itemId: protein.id,
-    name: `${protein.name} ${line.kind === "buffet" ? "Buffet" : "Cupbop"}`,
+    name: `${protein.name} Cupbop`,
     spicyLevelId: spicy.id,
     spicyLevel: spicy.fullName,
-    ...(line.kind === "bowl" && { modIds: mods.map((m) => m.id), mods: mods.map((m) => m.name) }),
+    modIds: mods.map((m) => m.id),
+    mods: mods.map((m) => m.name),
     qty,
     unitPrice,
     lineTotal: round2(unitPrice * qty),
