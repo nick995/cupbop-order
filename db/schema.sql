@@ -69,3 +69,28 @@ create trigger trg_store_settings_updated_at
   for each row execute function public.set_updated_at();
 
 alter table public.store_settings enable row level security;
+
+-- Catering sales targets (admin only, /admin/targets).
+create table if not exists public.catering_targets (
+  id          uuid primary key default gen_random_uuid(),
+  name        text not null,
+  address     text,
+  phone       text,
+  website     text,
+  place_id    text,             -- Google place id, when added via search
+  lat         double precision,
+  lng         double precision,
+  status      text not null default 'To visit'
+              check (status in ('To visit','Visited','Follow up','Customer','Not interested')),
+  notes       text,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+create index if not exists catering_targets_status_idx on public.catering_targets (status);
+
+drop trigger if exists trg_catering_targets_updated_at on public.catering_targets;
+create trigger trg_catering_targets_updated_at
+  before update on public.catering_targets
+  for each row execute function public.set_updated_at();
+
+alter table public.catering_targets enable row level security;

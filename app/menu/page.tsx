@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import StoreHeader from "@/components/StoreHeader";
@@ -144,6 +145,15 @@ export default function MenuPage() {
             ))}
           </MenuSection>
         ))}
+
+        <footer className="mt-10 flex items-center justify-center gap-6 border-t border-gray-200 pt-6 text-sm font-bold">
+          <Link href="/" className="text-black underline underline-offset-2">
+            ← Back to home
+          </Link>
+          <Link href="/admin" className="text-gray-500 underline-offset-2 hover:text-black hover:underline">
+            Staff login
+          </Link>
+        </footer>
       </main>
 
       {/* Sticky checkout bar */}

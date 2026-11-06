@@ -88,9 +88,12 @@ export default async function AdminOrdersPage({
           <p className="text-[10px] font-extrabold uppercase tracking-[0.2em]">Cupbop Park City</p>
           <h1 className="text-xl font-extrabold">Orders</h1>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-1">
           <Link href="/" className="text-sm font-bold underline">
             Home
+          </Link>
+          <Link href="/admin/targets" className="text-sm font-bold underline">
+            Targets
           </Link>
           <Link href="/admin/settings" className="text-sm font-bold underline">
             Availability

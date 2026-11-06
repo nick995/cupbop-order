@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { getSupabaseServerClient } from "@/lib/supabase";
 import { ORDER_STATUSES, storeToday } from "@/lib/orderActions";
+import { TARGET_STATUSES } from "@/lib/targets";
 import { MAX_LEAD_DAYS, addDays, getStoreSettings, isIsoDate } from "@/lib/storeSettings";
 import {
   ADMIN_COOKIE,
@@ -165,4 +166,72 @@ export async function setPasswordFromInvite(
     maxAge: SESSION_DAYS * 86_400,
   });
   redirect("/admin");
+}
+
+// --- Catering targets (/admin/targets) ---
+
+function cleanText(value: FormDataEntryValue | null, max = 500): string | null {
+  const s = String(value ?? "").trim().slice(0, max);
+  return s || null;
+}
+
+function cleanCoord(value: FormDataEntryValue | null, limit: number): number | null {
+  const n = Number(value);
+  return value !== null && value !== "" && Number.isFinite(n) && Math.abs(n) <= limit ? n : null;
+}
+
+function targetsDone(message: string, ok = true): never {
+  revalidatePath("/admin/targets");
+  const p = new URLSearchParams(
+    ok ? { saved: message } : { error: "Could not save. Make sure db/schema.sql has been run in Supabase." }
+  );
+  redirect(`/admin/targets?${p}`);
+}
+
+export async function addTarget(formData: FormData): Promise<void> {
+  await requireAdmin();
+  const name = cleanText(formData.get("name"), 200);
+  if (!name) redirect(`/admin/targets?${new URLSearchParams({ error: "Enter a name or pick a place from search." })}`);
+
+  const website = cleanText(formData.get("website"), 300);
+  const { error } = await getSupabaseServerClient()
+    .from("catering_targets")
+    .insert({
+      name,
+      address: cleanText(formData.get("address"), 300),
+      phone: cleanText(formData.get("phone"), 50),
+      website: website && /^https?:\/\//i.test(website) ? website : website ? `https://${website}` : null,
+      place_id: cleanText(formData.get("place_id"), 300),
+      lat: cleanCoord(formData.get("lat"), 90),
+      lng: cleanCoord(formData.get("lng"), 180),
+      notes: cleanText(formData.get("notes"), 2000),
+    });
+  if (error) console.error("[admin] add target failed", error);
+  targetsDone(`Added ${name}.`, !error);
+}
+
+export async function updateTarget(formData: FormData): Promise<void> {
+  await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  const patch: Record<string, string | null> = {};
+  const status = formData.get("status");
+  if (status !== null) {
+    if (!(TARGET_STATUSES as readonly string[]).includes(String(status))) return;
+    patch.status = String(status);
+  }
+  if (formData.has("notes")) patch.notes = cleanText(formData.get("notes"), 2000);
+
+  const { error } = await getSupabaseServerClient().from("catering_targets").update(patch).eq("id", id);
+  if (error) console.error("[admin] update target failed", id, error);
+  targetsDone(formData.has("notes") ? "Notes saved." : "Status updated.", !error);
+}
+
+export async function deleteTarget(formData: FormData): Promise<void> {
+  await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  const { error } = await getSupabaseServerClient().from("catering_targets").delete().eq("id", id);
+  if (error) console.error("[admin] delete target failed", id, error);
+  targetsDone("Removed.", !error);
 }

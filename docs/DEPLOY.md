@@ -55,6 +55,15 @@ dates (single days or ranges). Checkout and `/api/orders` both enforce them.
 Needs the `store_settings` table from `db/schema.sql` (re-run the file; it's
 idempotent). Without the table, ordering works with no restrictions.
 
+**Catering targets** (`/admin/targets`, "Targets" in the header): a list of
+places to pitch catering to, with status (To visit / Visited / Follow up /
+Customer / Not interested), notes, directions links and a Google map. Needs the
+`catering_targets` table from `db/schema.sql`. Map + place search need
+`GOOGLE_MAPS_API_KEY` (Google Cloud → enable **Maps JavaScript API** and
+**Places API (New)** → create an API key restricted to HTTP referrers
+`https://cupbop.mingyudev.com/*` and `http://localhost:3000/*`). The key is
+only sent to signed-in admins.
+
 ## 1. Supabase
 
 1. In the Supabase dashboard, pause or delete the project you're retiring so a free slot opens.
