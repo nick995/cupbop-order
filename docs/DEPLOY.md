@@ -43,6 +43,12 @@ request) and delete the user in Supabase.
 One-time: Supabase → **Authentication → Sign In / Providers** → turn **off**
 "Allow new users to sign up", so only accounts you create exist.
 
+**Order availability** (`/admin/settings`, "Availability" in the header):
+minimum notice in days (e.g. 3 = earliest order date is today + 3) and blackout
+dates (single days or ranges). Checkout and `/api/orders` both enforce them.
+Needs the `store_settings` table from `db/schema.sql` (re-run the file; it's
+idempotent). Without the table, ordering works with no restrictions.
+
 ## 1. Supabase
 
 1. In the Supabase dashboard, pause or delete the project you're retiring so a free slot opens.

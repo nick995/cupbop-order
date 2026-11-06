@@ -51,3 +51,21 @@ create trigger trg_orders_updated_at
 alter table public.orders enable row level security;
 
 -- (Admins will use a separate authenticated client later — leave no policies for now.)
+
+-- Order availability set by staff at /admin/settings (single row, id = 1).
+--   lead_days:      minimum days of notice (0 = same-day allowed)
+--   blackout_dates: dates customers can't order for
+create table if not exists public.store_settings (
+  id             integer primary key default 1 check (id = 1),
+  lead_days      integer not null default 0 check (lead_days between 0 and 60),
+  blackout_dates date[]  not null default '{}',
+  updated_at     timestamptz not null default now()
+);
+insert into public.store_settings (id) values (1) on conflict (id) do nothing;
+
+drop trigger if exists trg_store_settings_updated_at on public.store_settings;
+create trigger trg_store_settings_updated_at
+  before update on public.store_settings
+  for each row execute function public.set_updated_at();
+
+alter table public.store_settings enable row level security;

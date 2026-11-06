@@ -1,6 +1,7 @@
 import { after, NextResponse } from "next/server";
 import { getSupabaseServerClient } from "@/lib/supabase";
 import { confirmUrlFor } from "@/lib/orderActions";
+import { dateUnavailableReason, getStoreSettings } from "@/lib/storeSettings";
 import {
   OrderEmailOptions,
   OrderNotificationPayload,
@@ -87,6 +88,12 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+  }
+
+  // Minimum notice + blackout dates set by staff in /admin/settings.
+  const dateProblem = dateUnavailableReason(order.pickup_date, await getStoreSettings());
+  if (dateProblem) {
+    return NextResponse.json({ error: dateProblem }, { status: 400 });
   }
 
   // Try to insert into Supabase. If env vars are missing (local dev without

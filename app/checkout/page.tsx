@@ -49,6 +49,22 @@ function todayISO(): string {
   return d.toISOString().slice(0, 10);
 }
 
+// Minimum notice + blackout dates set by staff (see /api/availability).
+interface Availability {
+  earliestDate: string;
+  leadDays: number;
+  blackoutDates: string[];
+}
+
+function formatDay(date: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${date}T12:00:00Z`));
+}
+
 export default function CheckoutPage() {
   return (
     <Suspense fallback={<div className="min-h-screen bg-[#fffdf5]" />}>
@@ -67,6 +83,7 @@ function CheckoutInner() {
   const [form, setForm] = useState<FormState>({ ...INITIAL, order_type: initialType });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [availability, setAvailability] = useState<Availability | null>(null);
 
   useEffect(() => {
     const c = loadCart();
@@ -77,11 +94,27 @@ function CheckoutInner() {
     }
   }, [router]);
 
+  useEffect(() => {
+    fetch("/api/availability", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((a: Availability | null) => a && setAvailability(a))
+      .catch(() => {}); // The server still enforces the rules on submit.
+  }, []);
+
   const subtotal = useMemo(() => cartSubtotal(lines), [lines]);
   const totalBowls = useMemo(() => cartCount(lines), [lines]);
   const isCatering = form.order_type === "Catering";
   const bowlsShort = isCatering ? Math.max(0, CATERING_MIN_BOWLS - totalBowls) : 0;
-  const minDate = todayISO();
+  const minDate = availability?.earliestDate ?? todayISO();
+  const dateProblem = !form.pickup_date
+    ? null
+    : form.pickup_date < minDate
+      ? availability && availability.leadDays > 0
+        ? `Orders need at least ${availability.leadDays} day${availability.leadDays === 1 ? "" : "s"} notice. The earliest available date is ${formatDay(minDate)}.`
+        : "Please choose today or a future date."
+      : availability?.blackoutDates.includes(form.pickup_date)
+        ? `We're not taking orders for ${formatDay(form.pickup_date)}. Please choose another date.`
+        : null;
 
   const onChange = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -110,6 +143,7 @@ function CheckoutInner() {
       if (!form.pickup_date) return setError("Please choose a pickup date.");
       if (!form.pickup_time) return setError("Please choose a pickup time.");
     }
+    if (dateProblem) return setError(dateProblem);
 
     setSubmitting(true);
     try {
@@ -328,6 +362,13 @@ function CheckoutInner() {
                 onChange={(e) => onChange("pickup_date", e.target.value)}
                 className={inputCls}
               />
+              {dateProblem ? (
+                <span className="mt-1.5 block text-xs font-semibold text-red-700">{dateProblem}</span>
+              ) : availability && availability.leadDays > 0 ? (
+                <span className="mt-1.5 block text-xs text-gray-600">
+                  Earliest available: {formatDay(minDate)}
+                </span>
+              ) : null}
             </Field>
             <Field
               label={isCatering ? "Delivery time" : "Pickup time"}

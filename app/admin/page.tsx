@@ -87,10 +87,15 @@ export default async function AdminOrdersPage({
           <p className="text-[10px] font-extrabold uppercase tracking-[0.2em]">Cupbop Park City</p>
           <h1 className="text-xl font-extrabold">Orders</h1>
         </div>
-        <form action={logout} className="text-right">
-          <p className="hidden text-xs font-semibold sm:block">{adminEmail}</p>
-          <button className="text-sm font-bold underline">Sign out</button>
-        </form>
+        <div className="flex items-center gap-4">
+          <Link href="/admin/settings" className="text-sm font-bold underline">
+            Availability
+          </Link>
+          <form action={logout} className="text-right">
+            <p className="hidden text-xs font-semibold sm:block">{adminEmail}</p>
+            <button className="text-sm font-bold underline">Sign out</button>
+          </form>
+        </div>
       </header>
 
       <main className="mx-auto max-w-3xl px-4 pb-16 pt-4 sm:px-6">
