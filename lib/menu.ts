@@ -265,6 +265,7 @@ export interface OrderItem {
 }
 
 export const CATERING_MIN_SERVINGS = 15;
+export const BUFFET_MIN_PEOPLE = 20; // per buffet tray item
 export const MAX_LINE_QTY = 500;
 
 const round2 = (n: number) => Math.round(n * 100) / 100;

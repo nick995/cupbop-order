@@ -2,6 +2,7 @@ import { after, NextResponse } from "next/server";
 import { getSupabaseServerClient } from "@/lib/supabase";
 import { confirmUrlFor } from "@/lib/orderActions";
 import {
+  BUFFET_MIN_PEOPLE,
   CATERING_MIN_SERVINGS,
   LineSpec,
   OrderItem,
@@ -87,6 +88,13 @@ export async function POST(request: Request) {
     items: items as OrderItem[],
     subtotal: Math.round(items.reduce((sum, it) => sum + it!.lineTotal, 0) * 100) / 100,
   };
+
+  if (order.items.some((it) => it.kind === "buffet" && it.qty < BUFFET_MIN_PEOPLE)) {
+    return NextResponse.json(
+      { error: `Buffet trays are a minimum of ${BUFFET_MIN_PEOPLE} people each.` },
+      { status: 400 }
+    );
+  }
 
   if (order.order_type === "Pickup" && order.items.some((it) => it.kind === "buffet")) {
     return NextResponse.json({ error: "Buffet trays are for catering orders only." }, { status: 400 });

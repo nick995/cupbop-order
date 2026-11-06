@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import StoreHeader from "@/components/StoreHeader";
 import {
   BOWL_MODS,
+  BUFFET_MIN_PEOPLE,
   BUFFET_PROTEINS,
   CATERING_MIN_SERVINGS,
   DEFAULT_SPICY_ID,
@@ -46,7 +47,7 @@ export default function MenuPage() {
     setActive(selection);
     setDraftSpicy(DEFAULT_SPICY_ID);
     setDraftMods([]);
-    setDraftQty(selection.kind === "buffet" ? CATERING_MIN_SERVINGS : 1);
+    setDraftQty(selection.kind === "buffet" ? BUFFET_MIN_PEOPLE : 1);
   };
 
   const closeCustomize = () => setActive(null);
@@ -119,7 +120,7 @@ export default function MenuPage() {
         <MenuSection
           id="buffet"
           title="Buffet"
-          note={`Catering only. Family-style trays with rice, cabbage mix and noodles, priced per person. Trays come as-is: no spicy level or changes. Counts toward the ${CATERING_MIN_SERVINGS}-serving catering minimum.`}
+          note={`Catering only, minimum ${BUFFET_MIN_PEOPLE} people per tray. Family-style trays with rice, cabbage mix and noodles, priced per person. Trays come as-is: no spicy level or changes. Counts toward the ${CATERING_MIN_SERVINGS}-serving catering minimum.`}
         >
           {BUFFET_PROTEINS.map((p) => (
             <ItemCard
@@ -316,7 +317,7 @@ function CustomizeSheet({
   const { kind, item } = selection;
   const unitPrice = selection.kind === "extra" ? selection.item.price : priceForProtein(selection.item.id);
   const title = kind === "bowl" ? `${item.name} Cupbop` : kind === "buffet" ? `${item.name} Buffet` : item.name;
-  const minQty = 1;
+  const minQty = kind === "buffet" ? BUFFET_MIN_PEOPLE : 1;
   const total = unitPrice * qty;
   const spicy = findSpicy(spicyId);
 
@@ -364,7 +365,7 @@ function CustomizeSheet({
               </div>
               <p className="text-xs text-gray-600">
                 {item.description}
-                {kind === "buffet" && " · Family-style tray, priced per person. Comes as-is."}
+                {kind === "buffet" && ` · Family-style tray, priced per person, minimum ${BUFFET_MIN_PEOPLE} people. Comes as-is.`}
               </p>
             </div>
           </div>
