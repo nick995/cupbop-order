@@ -47,7 +47,7 @@ Until Supabase is configured, the checkout flow still works end-to-end — order
    - `ORDER_FROM_EMAIL`
    - `STORE_NOTIFICATION_EMAIL`
 
-Email is sent from `lib/notifications.ts` after each order is saved. SMS (Twilio) stays off unless its env vars are set.
+Email is sent from `lib/notifications.ts` after each order is saved, to every address in `STORE_NOTIFICATION_EMAIL` (comma-separated). Each email has a **Confirm order** button; unconfirmed orders are re-emailed every 24h, or every 12h within 48h of the order time, by an hourly GitHub Action (`.github/workflows/order-reminders.yml`). SMS (Twilio) stays off unless its env vars are set.
 
 ## Deploying
 
@@ -62,7 +62,10 @@ app/
   checkout/page.tsx          ← Order form
   order-confirmation/page.tsx
   api/orders/route.ts        ← Save order to Supabase + email the store
-  api/health/route.ts        ← Health check (daily Vercel cron keeps Supabase awake)
+  api/health/route.ts        ← Health check
+  api/cron/reminders/        ← Hourly reminder emails for unconfirmed orders
+  api/orders/confirm/        ← Marks an order Confirmed (from the email link)
+  orders/confirm/page.tsx    ← Staff confirm page
   layout.tsx, globals.css
 
 components/

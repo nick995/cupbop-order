@@ -25,8 +25,8 @@ Do not process payment online.
 
 At checkout, ask the customer how they plan to pay:
 
-- Cash at store
-- Credit card at store
+- Cash
+- Credit card
 
 This field should be saved as `payment_method`.
 
@@ -72,8 +72,8 @@ The `/checkout` page should include:
 - Pickup / delivery time (label changes based on order type)
 - Delivery address (Catering only)
 - Payment method:
-  - Cash at store
-  - Credit card at store
+  - Cash
+  - Credit card
 - Special instructions
 - Submit order request button
 

@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabaseServerClient } from "@/lib/supabase";
 
-// Health check, also hit daily by Vercel Cron (vercel.json) so the free
-// Supabase project sees activity and doesn't auto-pause.
+// Health check for uptime monitoring and deploy verification.
 export async function GET() {
   try {
     const supabase = getSupabaseServerClient();

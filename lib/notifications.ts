@@ -33,14 +33,26 @@ export interface OrderNotificationPayload {
 
 // ---------- EMAIL (Resend) ----------
 
+export interface OrderEmailOptions {
+  // Link to the confirm page; omitted when the order wasn't stored.
+  confirmUrl?: string;
+  // Set for reminder emails about orders still in "New" status.
+  reminder?: { count: number; hoursUntil: number };
+}
+
 export async function sendOrderEmail(
-  order: OrderNotificationPayload
+  order: OrderNotificationPayload,
+  options: OrderEmailOptions = {}
 ): Promise<{ ok: boolean; error?: string }> {
   const apiKey = process.env.RESEND_API_KEY;
   const fromEmail = process.env.ORDER_FROM_EMAIL;
-  const toEmail = process.env.STORE_NOTIFICATION_EMAIL;
+  // Comma-separated, e.g. "a@cupbop.com, b@cupbop.com"
+  const toEmails = (process.env.STORE_NOTIFICATION_EMAIL ?? "")
+    .split(",")
+    .map((e) => e.trim())
+    .filter(Boolean);
 
-  if (!apiKey || !fromEmail || !toEmail) {
+  if (!apiKey || !fromEmail || toEmails.length === 0) {
     return {
       ok: false,
       error:
@@ -49,12 +61,12 @@ export async function sendOrderEmail(
   }
 
   const resend = new Resend(apiKey);
-  const { html, text, subject } = renderOrderEmail(order);
+  const { html, text, subject } = renderOrderEmail(order, options);
 
   try {
     const { data, error } = await resend.emails.send({
       from: fromEmail,
-      to: [toEmail],
+      to: toEmails,
       replyTo: order.customer_email,
       subject,
       html,
@@ -70,12 +82,24 @@ export async function sendOrderEmail(
   }
 }
 
-function renderOrderEmail(order: OrderNotificationPayload): {
+function renderOrderEmail(
+  order: OrderNotificationPayload,
+  { confirmUrl, reminder }: OrderEmailOptions
+): {
   subject: string;
   html: string;
   text: string;
 } {
-  const subject = `New ${order.order_type} order — ${order.customer_name} — $${order.subtotal.toFixed(2)}`;
+  const when = `${order.pickup_date} at ${order.pickup_time.slice(0, 5)}`;
+  const subject = reminder
+    ? `Reminder #${reminder.count}: unconfirmed ${order.order_type} order — ${order.customer_name} — ${when}`
+    : `New ${order.order_type} order — ${order.customer_name} — $${order.subtotal.toFixed(2)}`;
+  const heading = reminder
+    ? `Unconfirmed ${order.order_type} Order`
+    : `New ${order.order_type} Order`;
+  const reminderNote = reminder
+    ? `This order is still not confirmed and is due in about ${reminder.hoursUntil} hours.`
+    : "";
 
   const itemsTextLines = order.items.map(
     (it) =>
@@ -85,14 +109,16 @@ function renderOrderEmail(order: OrderNotificationPayload): {
   );
 
   const text = [
-    `NEW ORDER — Cupbop Park City`,
+    reminder ? `UNCONFIRMED ORDER — Cupbop Park City` : `NEW ORDER — Cupbop Park City`,
+    reminderNote,
+    confirmUrl ? `Confirm this order: ${confirmUrl}` : ``,
     ``,
     `Order ID: ${order.orderId}`,
     `Type:     ${order.order_type}`,
     `Customer: ${order.customer_name}`,
     `Phone:    ${order.customer_phone}`,
     `Email:    ${order.customer_email}`,
-    `When:     ${order.pickup_date} at ${order.pickup_time}`,
+    `When:     ${when}`,
     order.delivery_address ? `Delivery: ${order.delivery_address}` : ``,
     `Payment:  ${order.payment_method} (at store)`,
     ``,
@@ -129,15 +155,17 @@ function renderOrderEmail(order: OrderNotificationPayload): {
   <div style="max-width:560px;margin:0 auto;background:#fff;border:2px solid #111;border-radius:16px;overflow:hidden;box-shadow:0 4px 0 #111">
     <div style="background:#FFD200;padding:16px 20px;border-bottom:2px solid #111">
       <div style="font-size:11px;font-weight:800;letter-spacing:.2em;text-transform:uppercase">Cupbop Park City</div>
-      <div style="font-size:22px;font-weight:800;margin-top:4px">New ${order.order_type} Order</div>
+      <div style="font-size:22px;font-weight:800;margin-top:4px">${heading}</div>
     </div>
     <div style="padding:20px">
+      ${reminderNote ? `<p style="margin:0 0 16px;background:#ffe4e4;border:1px solid #d33;padding:10px 12px;border-radius:8px;font-size:14px;font-weight:bold">${reminderNote}</p>` : ""}
+      ${confirmUrl ? `<p style="margin:0 0 20px;text-align:center"><a href="${escapeHtml(confirmUrl)}" style="display:inline-block;background:#111;color:#FFD200;padding:12px 24px;border-radius:999px;font-weight:800;text-decoration:none">Confirm order</a></p>` : ""}
       <table style="width:100%;font-size:14px;border-collapse:collapse">
         <tr><td style="padding:4px 0;color:#555">Order ID</td><td style="padding:4px 0;text-align:right;font-family:monospace">${escapeHtml(order.orderId)}</td></tr>
         <tr><td style="padding:4px 0;color:#555">Customer</td><td style="padding:4px 0;text-align:right;font-weight:bold">${escapeHtml(order.customer_name)}</td></tr>
         <tr><td style="padding:4px 0;color:#555">Phone</td><td style="padding:4px 0;text-align:right"><a href="tel:${escapeHtml(order.customer_phone)}">${escapeHtml(order.customer_phone)}</a></td></tr>
         <tr><td style="padding:4px 0;color:#555">Email</td><td style="padding:4px 0;text-align:right"><a href="mailto:${escapeHtml(order.customer_email)}">${escapeHtml(order.customer_email)}</a></td></tr>
-        <tr><td style="padding:4px 0;color:#555">${order.order_type === "Catering" ? "Delivery" : "Pickup"}</td><td style="padding:4px 0;text-align:right;font-weight:bold">${escapeHtml(order.pickup_date)} at ${escapeHtml(order.pickup_time)}</td></tr>
+        <tr><td style="padding:4px 0;color:#555">${order.order_type === "Catering" ? "Delivery" : "Pickup"}</td><td style="padding:4px 0;text-align:right;font-weight:bold">${escapeHtml(when)}</td></tr>
         ${order.delivery_address ? `<tr><td style="padding:4px 0;color:#555">Address</td><td style="padding:4px 0;text-align:right">${escapeHtml(order.delivery_address)}</td></tr>` : ""}
         <tr><td style="padding:4px 0;color:#555">Payment</td><td style="padding:4px 0;text-align:right">${escapeHtml(order.payment_method)} (at store)</td></tr>
       </table>

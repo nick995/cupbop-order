@@ -3,11 +3,26 @@
 ```
 browser ─HTTPS─▶ cupbop.mingyudev.com ─▶ Vercel (Next.js pages + /api/orders)
                                             ├─▶ Supabase Postgres (orders table)
-                                            └─▶ Resend (new-order email to the store)
+                                            └─▶ Resend (order + reminder emails to the store)
+GitHub Actions (hourly) ─▶ /api/cron/reminders ─▶ re-email unconfirmed orders
 ```
 
 Everything runs on Vercel. Nothing touches the Squash EC2 instance.
-Cost: $0 (Vercel Hobby, Supabase Free, Resend Free).
+Cost: $0 (Vercel Hobby, Supabase Free, Resend Free, GitHub Actions free minutes).
+
+## How store notifications work
+
+- Every new order emails everyone in `STORE_NOTIFICATION_EMAIL`
+  (`mjung@cupbop.com`, `lryan@cupbop.com`) with a **Confirm order** button.
+- The button opens `/orders/confirm`, which shows the order and a **Confirm order**
+  button. Clicking it sets the status to `Confirmed`.
+- While an order is still `New`, it's re-emailed as a reminder:
+  every **24 hours** while the order is more than 48 hours away, every **12 hours**
+  once it's within 48 hours (store time, America/Denver). Reminders stop when
+  the order is confirmed or its pickup/delivery time passes.
+- Changing `status` in the Supabase Table Editor to anything other than `New`
+  also stops reminders.
+- Cadence lives in `lib/orderActions.ts`.
 
 ## 1. Supabase
 
@@ -20,21 +35,24 @@ Cost: $0 (Vercel Hobby, Supabase Free, Resend Free).
    - `anon` key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
    - `service_role` key → `SUPABASE_SERVICE_ROLE_KEY` (secret, server only)
 
-> Free projects pause after ~7 days without activity. The daily cron in
-> `vercel.json` calls `/api/health`, which queries the DB to keep it awake.
-> If the project ever pauses anyway, orders return an error until you click **Restore**.
+> Free projects pause after ~7 days without activity. The hourly reminders
+> job queries the DB, which keeps it awake. If the project ever pauses anyway,
+> orders return an error until you click **Restore**.
 
 ## 2. Resend (store email)
 
 1. Sign in at resend.com → **Domains → Add domain** → `cupbop.mingyudev.com`.
 2. Resend shows DNS records (an MX + TXT on `send.cupbop`, and a DKIM TXT on
    `resend._domainkey.cupbop`). Add them **exactly as shown** at the DNS host for
-   `mingyudev.com` (step 4). They're on their own names, so they don't conflict
+   `mingyudev.com` (step 5). They're on their own names, so they don't conflict
    with the `cupbop` CNAME or any existing `mingyudev.com` mail records.
 3. Wait for **Verified**, then **API Keys → Create** (permission: Sending access) → `RESEND_API_KEY`.
 4. Values:
    - `ORDER_FROM_EMAIL` = `Cupbop Orders <orders@cupbop.mingyudev.com>`
-   - `STORE_NOTIFICATION_EMAIL` = the inbox that should receive orders
+   - `STORE_NOTIFICATION_EMAIL` = `mjung@cupbop.com,lryan@cupbop.com`
+
+   The domain must be **Verified** before Resend will deliver to `@cupbop.com`.
+   (Resend's `onboarding@resend.dev` test sender only delivers to your own Resend login email.)
 
 Leave all `TWILIO_*` vars unset — SMS stays off.
 
@@ -52,12 +70,26 @@ Leave all `TWILIO_*` vars unset — SMS stays off.
    | `SUPABASE_SERVICE_ROLE_KEY` | from step 1 |
    | `RESEND_API_KEY` | from step 2 |
    | `ORDER_FROM_EMAIL` | from step 2 |
-   | `STORE_NOTIFICATION_EMAIL` | from step 2 |
+   | `STORE_NOTIFICATION_EMAIL` | `mjung@cupbop.com,lryan@cupbop.com` |
+   | `ORDER_ACTION_SECRET` | run `openssl rand -hex 32` |
+   | `CRON_SECRET` | run `openssl rand -hex 32` (a different value) |
+   | `SITE_URL` | `https://cupbop.mingyudev.com` |
 
 4. **Deploy**. Every later push to `main` auto-deploys; branches get preview URLs.
 5. **Settings → Domains → Add** `cupbop.mingyudev.com`. Vercel shows the CNAME target to use.
 
-## 4. DNS (at the current host for mingyudev.com)
+## 4. GitHub (hourly reminders)
+
+Repo **Settings → Secrets and variables → Actions**:
+
+1. **Secrets → New repository secret**: `CRON_SECRET` = the same value as in Vercel.
+2. **Variables → New repository variable**: `SITE_URL` = `https://cupbop.mingyudev.com`.
+
+The workflow `.github/workflows/order-reminders.yml` runs hourly from `main`.
+To test it: **Actions → Order reminders → Run workflow**; the log should end with
+`{"checked":…,"sent":…,"failed":0}`.
+
+## 5. DNS (at the current host for mingyudev.com)
 
 | Name | Type | Value | TTL |
 |---|---|---|---|
@@ -67,14 +99,15 @@ Leave all `TWILIO_*` vars unset — SMS stays off.
 Don't touch `squash`, `www.squash` or `api.squash`.
 Vercel issues the HTTPS certificate automatically once the CNAME resolves.
 
-## 5. Verify
+## 6. Verify
 
 1. `https://cupbop.mingyudev.com` loads the intro, then the menu.
 2. `https://cupbop.mingyudev.com/api/health` returns `{"ok":true}`.
 3. Place a test **Pickup** order → confirmation page shows.
 4. Supabase **Table Editor → orders** shows the row with status `New`.
-5. The store inbox receives the order email (check spam the first time).
-6. Delete the test row.
+5. Both store inboxes receive the order email (check spam the first time).
+6. Click **Confirm order** in the email → confirm on the page → status shows `Confirmed`.
+7. Delete the test row.
 
 If an order fails: Vercel → Project → **Logs**, filter for `[orders]`.
 

@@ -17,9 +17,15 @@ create table if not exists public.orders (
   status               text not null default 'New' check (status in ('New','Confirmed','Ready','Completed','Cancelled')),
   subtotal             numeric(10,2) not null,
   items                jsonb not null default '[]'::jsonb,
+  last_notified_at     timestamptz,           -- last store email (new or reminder)
+  reminder_count       integer not null default 0,
   created_at           timestamptz not null default now(),
   updated_at           timestamptz not null default now()
 );
+
+-- Safe to re-run on a database created before reminders existed.
+alter table public.orders add column if not exists last_notified_at timestamptz;
+alter table public.orders add column if not exists reminder_count integer not null default 0;
 
 create index if not exists orders_pickup_date_idx on public.orders (pickup_date);
 create index if not exists orders_status_idx      on public.orders (status);

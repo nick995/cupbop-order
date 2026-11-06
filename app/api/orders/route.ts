@@ -1,6 +1,8 @@
 import { after, NextResponse } from "next/server";
 import { getSupabaseServerClient } from "@/lib/supabase";
+import { confirmUrlFor } from "@/lib/orderActions";
 import {
+  OrderEmailOptions,
   OrderNotificationPayload,
   sendOrderEmail,
   sendOrderSMS,
@@ -129,6 +131,9 @@ export async function POST(request: Request) {
         status: "New",
         subtotal: order.subtotal,
         items: order.items,
+        // The new-order email goes out right after this insert; reminders
+        // count from here.
+        last_notified_at: new Date().toISOString(),
       })
       .select("id")
       .single();
@@ -144,7 +149,8 @@ export async function POST(request: Request) {
     // Notify the store (email + SMS) after the response is sent. `after()`
     // keeps the serverless function alive until it finishes; a bare
     // fire-and-forget promise can be cut off on Vercel.
-    after(() => notifyStore({ ...order, orderId: data.id }));
+    const confirmUrl = confirmUrlFor(data.id, new URL(request.url).origin);
+    after(() => notifyStore({ ...order, orderId: data.id }, { confirmUrl }));
 
     return NextResponse.json({ id: data.id, stored: true });
   } catch (err) {
@@ -157,7 +163,8 @@ export async function POST(request: Request) {
 }
 
 async function notifyStore(
-  payload: OrderPayload & { orderId: string }
+  payload: OrderPayload & { orderId: string },
+  emailOptions: OrderEmailOptions = {}
 ): Promise<void> {
   const notif: OrderNotificationPayload = {
     orderId: payload.orderId,
@@ -182,7 +189,7 @@ async function notifyStore(
   };
 
   const [emailResult, smsResult] = await Promise.all([
-    sendOrderEmail(notif).catch((err) => ({
+    sendOrderEmail(notif, emailOptions).catch((err) => ({
       ok: false,
       error: err instanceof Error ? err.message : "Email crashed",
     })),

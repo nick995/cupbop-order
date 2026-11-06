@@ -1,0 +1,24 @@
+name: Order reminders
+
+# Hourly: re-email the store about orders still in "New" status.
+# Needs repo secret CRON_SECRET and repo variable SITE_URL.
+on:
+  schedule:
+    - cron: "7 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Call reminders endpoint
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          SITE_URL: ${{ vars.SITE_URL }}
+        run: |
+          curl --fail-with-body -sS --max-time 60 \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "${SITE_URL%/}/api/cron/reminders"

@@ -348,8 +348,8 @@ function CheckoutInner() {
               onChange={(v) => onChange("payment_method", v as PaymentMethod)}
               options={["Cash", "Credit Card"]}
               labelMap={{
-                Cash: "Cash at store",
-                "Credit Card": "Credit card at store",
+                Cash: "Cash",
+                "Credit Card": "Credit card",
               }}
             />
             <p className="mt-2 rounded-lg bg-yellow-100 px-3 py-2 text-xs font-semibold text-black">
