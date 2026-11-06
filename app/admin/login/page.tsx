@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAdminEmail } from "@/lib/adminAuth";
 import LoginForm from "./LoginForm";
@@ -18,6 +19,9 @@ export default async function AdminLoginPage() {
         <h1 className="mb-5 mt-1 text-2xl font-extrabold text-black">Store admin</h1>
         <LoginForm />
       </div>
+      <Link href="/" className="mt-5 text-sm font-bold text-gray-600 underline hover:text-black">
+        ← Back to main page
+      </Link>
     </main>
   );
 }

@@ -32,9 +32,14 @@ export default async function AdminSettingsPage({
           <p className="text-[10px] font-extrabold uppercase tracking-[0.2em]">Cupbop Park City</p>
           <h1 className="text-xl font-extrabold">Order availability</h1>
         </div>
-        <Link href="/admin" className="text-sm font-bold underline">
-          ← Orders
-        </Link>
+        <div className="flex items-center gap-4">
+          <Link href="/" className="text-sm font-bold underline">
+            Home
+          </Link>
+          <Link href="/admin" className="text-sm font-bold underline">
+            ← Orders
+          </Link>
+        </div>
       </header>
 
       <main className="mx-auto max-w-3xl space-y-5 px-4 pb-16 pt-4 sm:px-6">

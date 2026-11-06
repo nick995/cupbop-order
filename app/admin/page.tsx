@@ -88,6 +88,9 @@ export default async function AdminOrdersPage({
           <h1 className="text-xl font-extrabold">Orders</h1>
         </div>
         <div className="flex items-center gap-4">
+          <Link href="/" className="text-sm font-bold underline">
+            Home
+          </Link>
           <Link href="/admin/settings" className="text-sm font-bold underline">
             Availability
           </Link>
