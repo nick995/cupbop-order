@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { getSupabaseServerClient } from "@/lib/supabase";
 import { ORDER_STATUSES, storeToday } from "@/lib/orderActions";
-import { TARGET_STATUSES } from "@/lib/targets";
+import { ActivityKind, TARGET_STATUSES } from "@/lib/targets";
 import {
   LineSpec,
   MAX_LINE_QTY,
@@ -188,12 +188,25 @@ function cleanCoord(value: FormDataEntryValue | null, limit: number): number | n
   return value !== null && value !== "" && Number.isFinite(n) && Math.abs(n) <= limit ? n : null;
 }
 
-function targetsDone(message: string, ok = true): never {
+// Back to the targets page, scrolled to the card that changed.
+function targetsDone(message: string, ok = true, targetId?: string): never {
   revalidatePath("/admin/targets");
   const p = new URLSearchParams(
     ok ? { saved: message } : { error: "Could not save. Make sure db/schema.sql has been run in Supabase." }
   );
-  redirect(`/admin/targets?${p}`);
+  redirect(`/admin/targets?${p}${targetId ? `#target-${targetId}` : ""}`);
+}
+
+// Activity history is best-effort: a failed log never blocks the main change.
+async function logTargetActivity(
+  targetId: string,
+  entry: { kind: ActivityKind; status?: string; note?: string | null },
+  adminEmail: string
+): Promise<void> {
+  const { error } = await getSupabaseServerClient()
+    .from("target_activities")
+    .insert({ target_id: targetId, ...entry, created_by: adminEmail });
+  if (error) console.error("[admin] activity log failed", targetId, error);
 }
 
 export async function addTarget(formData: FormData): Promise<void> {
@@ -219,25 +232,85 @@ export async function addTarget(formData: FormData): Promise<void> {
 }
 
 export async function updateTarget(formData: FormData): Promise<void> {
+  const adminEmail = await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  const status = String(formData.get("status") ?? "");
+  if (!id || !(TARGET_STATUSES as readonly string[]).includes(status)) return;
+
+  // Choosing "Visited" counts as a visit (sets the last-visit date).
+  const patch: Record<string, string> = { status };
+  if (status === "Visited") patch.last_visited_at = new Date().toISOString();
+  let { error } = await getSupabaseServerClient().from("catering_targets").update(patch).eq("id", id);
+  if (error && status === "Visited") {
+    // Sales-tracking columns not added yet: still save the status.
+    ({ error } = await getSupabaseServerClient().from("catering_targets").update({ status }).eq("id", id));
+  }
+  if (error) console.error("[admin] update target failed", id, error);
+  if (!error) {
+    await logTargetActivity(id, status === "Visited" ? { kind: "visit" } : { kind: "status", status }, adminEmail);
+  }
+  targetsDone(`Marked ${status}.`, !error, id);
+}
+
+// Contact, phone, follow-up date and general notes.
+export async function updateTargetDetails(formData: FormData): Promise<void> {
   await requireAdmin();
   const id = String(formData.get("id") ?? "");
   if (!id) return;
-  const patch: Record<string, string | null> = {};
-  const status = formData.get("status");
-  if (status !== null) {
-    if (!(TARGET_STATUSES as readonly string[]).includes(String(status))) return;
-    patch.status = String(status);
-  }
-  if (formData.has("notes")) patch.notes = cleanText(formData.get("notes"), 2000);
+  const followUp = String(formData.get("next_follow_up") ?? "");
+  const { error } = await getSupabaseServerClient()
+    .from("catering_targets")
+    .update({
+      contact_name: cleanText(formData.get("contact_name"), 200),
+      phone: cleanText(formData.get("phone"), 50),
+      next_follow_up: isIsoDate(followUp) ? followUp : null,
+      notes: cleanText(formData.get("notes"), 2000),
+    })
+    .eq("id", id);
+  if (error) console.error("[admin] update target details failed", id, error);
+  targetsDone("Details saved.", !error, id);
+}
 
-  const { error } = await getSupabaseServerClient().from("catering_targets").update(patch).eq("id", id);
-  if (error) console.error("[admin] update target failed", id, error);
-  targetsDone(formData.has("notes") ? "Notes saved." : "Status updated.", !error);
+// "Log visit / call / email / note" with an optional note and next follow-up.
+export async function logActivity(formData: FormData): Promise<void> {
+  const adminEmail = await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  const kind = String(formData.get("kind") ?? "");
+  if (!id || !["visit", "call", "email", "note"].includes(kind)) return;
+  const note = cleanText(formData.get("note"), 2000);
+  if (kind === "note" && !note) {
+    redirect(`/admin/targets?${new URLSearchParams({ error: "Write something to save a note." })}#target-${id}`);
+  }
+
+  const supabase = getSupabaseServerClient();
+  const { error } = await supabase
+    .from("target_activities")
+    .insert({ target_id: id, kind, note, created_by: adminEmail });
+  if (error) {
+    console.error("[admin] log activity failed", id, error);
+    targetsDone("", false, id);
+  }
+
+  const patch: Record<string, string | null> = {};
+  if (kind === "visit") patch.last_visited_at = new Date().toISOString();
+  const followUp = String(formData.get("next_follow_up") ?? "");
+  if (isIsoDate(followUp)) patch.next_follow_up = followUp;
+  else if (formData.get("clear_follow_up")) patch.next_follow_up = null;
+  if (Object.keys(patch).length) {
+    const { error: patchError } = await supabase.from("catering_targets").update(patch).eq("id", id);
+    if (patchError) console.error("[admin] target patch after activity failed", id, patchError);
+  }
+  // A first visit moves a place out of "To visit".
+  if (kind === "visit") {
+    await supabase.from("catering_targets").update({ status: "Visited" }).eq("id", id).eq("status", "To visit");
+  }
+  const label = { visit: "Visit", call: "Call", email: "Email", note: "Note" }[kind];
+  targetsDone(`${label} logged.`, true, id);
 }
 
 // Attribute an order to a sales target. Linking also marks the target a Customer.
 export async function setOrderTarget(formData: FormData): Promise<void> {
-  await requireAdmin();
+  const adminEmail = await requireAdmin();
   const id = String(formData.get("id") ?? "");
   const targetId = String(formData.get("target_id") ?? "") || null;
   if (!id) return;
@@ -252,6 +325,7 @@ export async function setOrderTarget(formData: FormData): Promise<void> {
       .eq("id", targetId)
       .neq("status", "Customer");
     if (statusError) console.error("[admin] mark target customer failed", targetId, statusError);
+    await logTargetActivity(targetId, { kind: "order", note: "Order linked from the Orders page" }, adminEmail);
   }
   revalidatePath("/admin");
   revalidatePath("/admin/targets");
@@ -361,6 +435,11 @@ export async function createManualOrder(
   }
   if (targetId) {
     await supabase.from("catering_targets").update({ status: "Customer" }).eq("id", targetId).neq("status", "Customer");
+    await logTargetActivity(
+      targetId,
+      { kind: "order", note: `Order entered: $${(subtotal - discount).toFixed(2)} for ${date}` },
+      adminEmail
+    );
   }
   revalidatePath("/admin");
   revalidatePath("/admin/targets");

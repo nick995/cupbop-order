@@ -70,6 +70,17 @@ custom items at any price, a $ or % discount, optional sales target. Saved as
 `source = 'admin'`, no store email, online minimums/blackouts don't apply. Any
 order's discount can be changed from its card (Details → Discount).
 
+**Sales tracking on targets**: each card has a quick log (Visit / Call / Email /
+Note, with notes and an optional next follow-up date), a history timeline, last
+visit date, contact person and follow-ups (due ones sort first and show in red).
+Needs the `target_activities` table and the extra `catering_targets` columns
+from `db/schema.sql`.
+
+**Orders page extras**: month-to-date sales and next-7-days stats, search by
+name/phone/email across all orders, and a 🍳 Prep tab that adds up every item
+for a day (bowls by protein + spicy level, buffet people, extras) with the
+day's schedule and delivery addresses.
+
 ## 1. Supabase
 
 1. In the Supabase dashboard, pause or delete the project you're retiring so a free slot opens.

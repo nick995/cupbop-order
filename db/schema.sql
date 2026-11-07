@@ -104,3 +104,20 @@ create index if not exists orders_target_id_idx on public.orders (target_id);
 alter table public.orders add column if not exists discount   numeric(10,2) not null default 0;  -- total = subtotal - discount
 alter table public.orders add column if not exists source     text not null default 'online';    -- 'online' | 'admin'
 alter table public.orders add column if not exists created_by text;                               -- admin email for manual orders
+
+-- Sales tracking on targets: contact, follow-ups, last visit, activity history.
+alter table public.catering_targets add column if not exists contact_name    text;
+alter table public.catering_targets add column if not exists next_follow_up  date;
+alter table public.catering_targets add column if not exists last_visited_at timestamptz;
+
+create table if not exists public.target_activities (
+  id          uuid primary key default gen_random_uuid(),
+  target_id   uuid not null references public.catering_targets(id) on delete cascade,
+  kind        text not null check (kind in ('visit','call','email','note','status','order')),
+  status      text,          -- new status, for kind = 'status'
+  note        text,
+  created_by  text,          -- admin email
+  created_at  timestamptz not null default now()
+);
+create index if not exists target_activities_target_idx on public.target_activities (target_id, created_at desc);
+alter table public.target_activities enable row level security;

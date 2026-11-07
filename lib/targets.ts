@@ -14,9 +14,34 @@ export interface CateringTarget {
   lng: number | null;
   status: TargetStatus;
   notes: string | null;
+  contact_name?: string | null;      // optional until the sales-tracking columns exist
+  next_follow_up?: string | null;    // YYYY-MM-DD
+  last_visited_at?: string | null;
   created_at: string;
   updated_at: string;
 }
+
+export const ACTIVITY_KINDS = ["visit", "call", "email", "note", "status", "order"] as const;
+export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
+
+export interface TargetActivity {
+  id: string;
+  target_id: string;
+  kind: ActivityKind;
+  status: string | null;
+  note: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+export const ACTIVITY_LABELS: Record<ActivityKind, { icon: string; label: string }> = {
+  visit: { icon: "🚶", label: "Visited" },
+  call: { icon: "📞", label: "Called" },
+  email: { icon: "✉️", label: "Emailed" },
+  note: { icon: "📝", label: "Note" },
+  status: { icon: "🔁", label: "Status" },
+  order: { icon: "🧾", label: "Order" },
+};
 
 // Pin / badge colors per status (hex for map pins, Tailwind for badges).
 export const TARGET_STATUS_COLORS: Record<TargetStatus, { hex: string; badge: string }> = {
