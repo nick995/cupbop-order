@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { getSupabaseServerClient } from "@/lib/supabase";
 import { ORDER_STATUSES, storeToday } from "@/lib/orderActions";
 import { TARGET_STATUSES } from "@/lib/targets";
+import { LineSpec, MAX_LINE_QTY, OrderItem, buildOrderItem, discountAmount } from "@/lib/menu";
 import { MAX_LEAD_DAYS, addDays, getStoreSettings, isIsoDate } from "@/lib/storeSettings";
 import {
   ADMIN_COOKIE,
@@ -256,4 +257,117 @@ export async function deleteTarget(formData: FormData): Promise<void> {
   const { error } = await getSupabaseServerClient().from("catering_targets").delete().eq("id", id);
   if (error) console.error("[admin] delete target failed", id, error);
   targetsDone("Removed.", !error);
+}
+
+// --- Manual orders + discounts (/admin/orders/new) ---
+
+interface ManualLine {
+  kind: "bowl" | "buffet" | "extra" | "custom";
+  itemId?: string;
+  spicyLevelId?: string;
+  name?: string;   // custom only
+  price?: number;  // custom only
+  qty: number;
+}
+
+export async function createManualOrder(
+  _prev: { error?: string },
+  formData: FormData
+): Promise<{ error?: string }> {
+  const adminEmail = await requireAdmin();
+
+  const name = cleanText(formData.get("customer_name"), 200);
+  const orderType = String(formData.get("order_type") ?? "");
+  const date = String(formData.get("pickup_date") ?? "");
+  const time = String(formData.get("pickup_time") ?? "");
+  const payment = String(formData.get("payment_method") ?? "");
+  const status = String(formData.get("status") ?? "Confirmed");
+  if (!name) return { error: "Enter the customer name." };
+  if (orderType !== "Pickup" && orderType !== "Catering") return { error: "Choose an order type." };
+  if (!isIsoDate(date) || !/^\d{2}:\d{2}$/.test(time)) return { error: "Choose a date and time." };
+  if (payment !== "Cash" && payment !== "Credit Card") return { error: "Choose a payment method." };
+  if (!(ORDER_STATUSES as readonly string[]).includes(status)) return { error: "Choose a status." };
+
+  let lines: ManualLine[];
+  try {
+    lines = JSON.parse(String(formData.get("lines") ?? "[]"));
+    if (!Array.isArray(lines)) throw new Error();
+  } catch {
+    return { error: "Couldn't read the items. Refresh and try again." };
+  }
+  if (lines.length === 0) return { error: "Add at least one item." };
+  if (lines.length > 100) return { error: "Too many items." };
+
+  const items: OrderItem[] = [];
+  for (const l of lines) {
+    const qty = Math.floor(Number(l?.qty));
+    if (l?.kind === "custom") {
+      const itemName = String(l.name ?? "").trim().slice(0, 200);
+      const price = Math.round(Number(l.price) * 100) / 100;
+      if (!itemName) return { error: "Give every custom item a name." };
+      if (!Number.isFinite(price) || price < 0 || price > 100_000) return { error: `Check the price for "${itemName}".` };
+      if (!Number.isFinite(qty) || qty < 1 || qty > MAX_LINE_QTY) return { error: `Check the quantity for "${itemName}".` };
+      items.push({ kind: "custom", itemId: "custom", name: itemName, qty, unitPrice: price, lineTotal: Math.round(price * qty * 100) / 100 });
+      continue;
+    }
+    const built = buildOrderItem({ kind: l?.kind, itemId: String(l?.itemId ?? ""), spicyLevelId: l?.spicyLevelId, modIds: [], qty } as LineSpec);
+    if (!built) return { error: "One of the items is invalid. Check items and quantities." };
+    items.push(built);
+  }
+
+  const subtotal = Math.round(items.reduce((sum, it) => sum + it.lineTotal, 0) * 100) / 100;
+  const discountType = formData.get("discount_type") === "percent" ? "percent" : "amount";
+  const discount = discountAmount(subtotal, discountType, Number(formData.get("discount_value") ?? 0));
+  const targetId = String(formData.get("target_id") ?? "") || null;
+
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("orders")
+    .insert({
+      customer_name: name,
+      customer_phone: cleanText(formData.get("customer_phone"), 50) ?? "",
+      customer_email: (cleanText(formData.get("customer_email"), 200) ?? "").toLowerCase(),
+      order_type: orderType,
+      pickup_date: date,
+      pickup_time: time,
+      delivery_address: cleanText(formData.get("delivery_address"), 500),
+      payment_method: payment,
+      special_instructions: cleanText(formData.get("special_instructions"), 2000),
+      status,
+      subtotal,
+      discount,
+      items,
+      source: "admin",
+      created_by: adminEmail,
+      target_id: targetId,
+      // No store email for staff-entered orders; reminders only apply to "New".
+      last_notified_at: new Date().toISOString(),
+    })
+    .select("id")
+    .single();
+  if (error) {
+    console.error("[admin] manual order failed", error);
+    return { error: "Could not save the order. Make sure db/schema.sql has been run in Supabase." };
+  }
+  if (targetId) {
+    await supabase.from("catering_targets").update({ status: "Customer" }).eq("id", targetId).neq("status", "Customer");
+  }
+  revalidatePath("/admin");
+  revalidatePath("/admin/targets");
+  redirect(`/admin?view=all#order-${data.id}`);
+}
+
+export async function setOrderDiscount(formData: FormData): Promise<void> {
+  await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  const supabase = getSupabaseServerClient();
+  const { data: order } = await supabase.from("orders").select("subtotal").eq("id", id).single();
+  if (!order) return;
+  const discountType = formData.get("discount_type") === "percent" ? "percent" : "amount";
+  const discount = discountAmount(Number(order.subtotal), discountType, Number(formData.get("discount_value") ?? 0));
+  const { error } = await supabase.from("orders").update({ discount }).eq("id", id);
+  if (error) console.error("[admin] discount update failed", id, error);
+  revalidatePath("/admin");
+  revalidatePath("/admin/targets");
 }

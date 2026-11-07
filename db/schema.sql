@@ -99,3 +99,8 @@ alter table public.catering_targets enable row level security;
 alter table public.orders
   add column if not exists target_id uuid references public.catering_targets(id) on delete set null;
 create index if not exists orders_target_id_idx on public.orders (target_id);
+
+-- Orders entered by staff at /admin/orders/new, and discounts.
+alter table public.orders add column if not exists discount   numeric(10,2) not null default 0;  -- total = subtotal - discount
+alter table public.orders add column if not exists source     text not null default 'online';    -- 'online' | 'admin'
+alter table public.orders add column if not exists created_by text;                               -- admin email for manual orders

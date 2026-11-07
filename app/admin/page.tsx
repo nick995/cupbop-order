@@ -3,8 +3,8 @@ import Link from "next/link";
 import { getSupabaseServerClient } from "@/lib/supabase";
 import { requireAdmin } from "@/lib/adminAuth";
 import { ORDER_STATUSES, OrderStatus, STORE_TIME_ZONE, storeToday } from "@/lib/orderActions";
-import { LineKind, itemDisplayName } from "@/lib/menu";
-import { logout, setOrderStatus, setOrderTarget } from "./actions";
+import { cateringServings, itemDisplayName } from "@/lib/menu";
+import { logout, setOrderDiscount, setOrderStatus, setOrderTarget } from "./actions";
 
 export const metadata: Metadata = {
   title: "Orders — Cupbop Park City admin",
@@ -26,10 +26,13 @@ interface OrderRow {
   special_instructions: string | null;
   status: OrderStatus;
   subtotal: number;
-  items: { kind?: LineKind; qty: number; name?: string; proteinName?: string; spicyLevel?: string; mods?: string[]; lineTotal: number }[];
+  items: { kind?: string; qty: number; name?: string; proteinName?: string; spicyLevel?: string; mods?: string[]; lineTotal: number }[];
   created_at: string;
   reminder_count: number;
   target_id?: string | null;
+  discount?: number | null;
+  source?: string | null;
+  created_by?: string | null;
 }
 
 type TargetOption = { id: string; name: string };
@@ -121,6 +124,13 @@ export default async function AdminOrdersPage({
           </Link>
         )}
 
+        <Link
+          href="/admin/orders/new"
+          className="mb-4 flex items-center justify-center rounded-xl border-2 border-black bg-[#FFD200] px-4 py-3 text-sm font-extrabold shadow-[0_3px_0_#000] active:translate-y-0.5 active:shadow-none"
+        >
+          + New order (enter a sale manually)
+        </Link>
+
         <nav className="mb-3 flex gap-2">
           {(["upcoming", "past", "all"] as View[]).map((v) => (
             <Link
@@ -172,7 +182,10 @@ export default async function AdminOrdersPage({
 function OrderCard({ order: o, targets }: { order: OrderRow; targets: TargetOption[] }) {
   const target = o.target_id ? targets.find((t) => t.id === o.target_id) : undefined;
   // Bowls + buffet servings (old orders have no `kind`; they were all bowls).
-  const bowls = o.items.reduce((sum, it) => sum + (it.kind === "extra" ? 0 : it.qty || 0), 0);
+  const bowls = cateringServings(o.items);
+  const subtotal = Number(o.subtotal);
+  const discount = Number(o.discount ?? 0);
+  const total = subtotal - discount;
 
   return (
     <li id={`order-${o.id}`} className="scroll-mt-20 rounded-2xl border-2 border-black bg-white shadow-[0_3px_0_#000]">
@@ -183,8 +196,15 @@ function OrderCard({ order: o, targets }: { order: OrderRow; targets: TargetOpti
           </p>
           <p className="text-sm">
             <span className="font-bold">{o.customer_name}</span>
-            <span className="text-gray-600"> · {o.order_type} · {bowls} serving{bowls === 1 ? "" : "s"} · ${Number(o.subtotal).toFixed(2)}</span>
+            <span className="text-gray-600"> · {o.order_type} · {bowls} serving{bowls === 1 ? "" : "s"} · </span>
+            {discount > 0 && <span className="text-gray-400 line-through">${subtotal.toFixed(2)}</span>}{" "}
+            <span className="font-semibold">${total.toFixed(2)}</span>
           </p>
+          {o.source === "admin" && (
+            <span className="mt-0.5 mr-2 inline-block rounded-md bg-black px-1.5 py-0.5 text-[10px] font-extrabold uppercase text-[#FFD200]">
+              Manual
+            </span>
+          )}
           {target && (
             <Link href={`/admin/targets#target-${target.id}`} className="mt-0.5 inline-block text-xs font-bold text-green-800 underline">
               🎯 {target.name}
@@ -205,6 +225,7 @@ function OrderCard({ order: o, targets }: { order: OrderRow; targets: TargetOpti
           <Detail label="Payment">{o.payment_method}</Detail>
           <Detail label="Placed">{formatPlaced(o.created_at)}</Detail>
           {o.reminder_count > 0 && <Detail label="Reminders sent">{o.reminder_count}</Detail>}
+          {o.created_by && <Detail label="Entered by">{o.created_by}</Detail>}
         </dl>
         <ul className="mt-3 border-t border-gray-200 pt-2 text-sm">
           {o.items.map((it, i) => (
@@ -218,9 +239,36 @@ function OrderCard({ order: o, targets }: { order: OrderRow; targets: TargetOpti
             </li>
           ))}
         </ul>
+        <div className="mt-2 space-y-0.5 border-t border-gray-200 pt-2 text-sm">
+          <div className="flex justify-between"><span>Subtotal</span><span>${subtotal.toFixed(2)}</span></div>
+          {discount > 0 && (
+            <div className="flex justify-between text-green-700"><span>Discount</span><span>−${discount.toFixed(2)}</span></div>
+          )}
+          <div className="flex justify-between font-extrabold"><span>Total</span><span>${total.toFixed(2)}</span></div>
+        </div>
         {o.special_instructions && (
           <p className="mt-2 rounded-lg bg-[#fff8d8] px-3 py-2 text-sm"><strong>Notes:</strong> {o.special_instructions}</p>
         )}
+        <form action={setOrderDiscount} className="mt-3 flex items-center gap-2 border-t border-gray-200 pt-3 text-sm">
+          <input type="hidden" name="id" value={o.id} />
+          <label htmlFor={`discount-${o.id}`} className="shrink-0 font-bold">Discount</label>
+          <select name="discount_type" defaultValue="amount" aria-label="Discount type" className="rounded-lg border-2 border-black bg-white px-1.5 py-1">
+            <option value="amount">$</option>
+            <option value="percent">%</option>
+          </select>
+          <input
+            id={`discount-${o.id}`}
+            name="discount_value"
+            type="number"
+            min={0}
+            step="0.01"
+            inputMode="decimal"
+            defaultValue={discount > 0 ? discount.toFixed(2) : ""}
+            placeholder="0"
+            className="w-24 min-w-0 rounded-lg border-2 border-black px-2 py-1 text-right"
+          />
+          <button className="shrink-0 rounded-full border-2 border-black bg-[#FFD200] px-3 py-1 text-xs font-bold">Save</button>
+        </form>
         {targets.length > 0 && (
           <form action={setOrderTarget} className="mt-3 flex items-center gap-2 border-t border-gray-200 pt-3 text-sm">
             <input type="hidden" name="id" value={o.id} />

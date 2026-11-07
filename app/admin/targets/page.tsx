@@ -23,8 +23,11 @@ interface LinkedOrder {
   customer_name: string;
   pickup_date: string;
   subtotal: number;
+  discount?: number | null; // missing until the discount column exists
   status: string;
 }
+
+const orderTotal = (o: LinkedOrder) => Number(o.subtotal) - Number(o.discount ?? 0);
 
 function TargetOrders({ orders, sales }: { orders: LinkedOrder[]; sales: number }) {
   if (orders.length === 0) {
@@ -46,7 +49,7 @@ function TargetOrders({ orders, sales }: { orders: LinkedOrder[]; sales: number 
             <Link href={`/admin?view=all#order-${o.id}`} className={`underline ${o.status === "Cancelled" ? "text-gray-400 line-through" : ""}`}>
               {formatDay(o.pickup_date)} · {o.customer_name}
             </Link>
-            <span className="font-semibold">${Number(o.subtotal).toFixed(2)}</span>
+            <span className="font-semibold">${orderTotal(o).toFixed(2)}</span>
           </li>
         ))}
       </ul>
@@ -70,7 +73,7 @@ export default async function TargetsPage({
     supabase.from("catering_targets").select("*").order("created_at", { ascending: false }).limit(500),
     supabase
       .from("orders")
-      .select("id, target_id, customer_name, pickup_date, subtotal, status")
+      .select("*")
       .not("target_id", "is", null)
       .order("pickup_date", { ascending: false })
       .limit(1000),
@@ -83,7 +86,7 @@ export default async function TargetsPage({
     ordersByTarget.set(o.target_id, [...(ordersByTarget.get(o.target_id) ?? []), o]);
   }
   const salesOf = (list: LinkedOrder[] = []) =>
-    list.filter((o) => o.status !== "Cancelled").reduce((sum, o) => sum + Number(o.subtotal), 0);
+    list.filter((o) => o.status !== "Cancelled").reduce((sum, o) => sum + orderTotal(o), 0);
   const totalSales = salesOf((orderRows ?? []) as LinkedOrder[]);
   const totalOrders = ((orderRows ?? []) as LinkedOrder[]).filter((o) => o.status !== "Cancelled").length;
   const targets = statusFilter ? all.filter((t) => t.status === statusFilter) : all;
@@ -181,6 +184,12 @@ export default async function TargetsPage({
               </div>
 
               <TargetOrders orders={ordersByTarget.get(t.id) ?? []} sales={salesOf(ordersByTarget.get(t.id))} />
+              <Link
+                href={`/admin/orders/new?${new URLSearchParams({ target: t.id })}`}
+                className="mt-2 inline-block text-xs font-bold underline"
+              >
+                + New order for {t.name}
+              </Link>
 
               <form action={updateTarget} className="mt-3">
                 <input type="hidden" name="id" value={t.id} />

@@ -252,7 +252,7 @@ export interface LineSpec {
 }
 
 export interface OrderItem {
-  kind: LineKind;
+  kind: LineKind | "custom"; // "custom": staff-entered item with its own price
   itemId: string;
   name: string;            // "Rock Cupbop", "Rock Buffet", "Seoul Sauce Wings"
   spicyLevelId?: string;
@@ -308,8 +308,16 @@ export function buildOrderItem(line: LineSpec): OrderItem | null {
 }
 
 // Bowls and buffet servings both count toward the catering minimum.
-export function cateringServings(lines: Pick<LineSpec, "kind" | "qty">[]): number {
-  return lines.reduce((sum, l) => sum + (l.kind === "extra" ? 0 : l.qty), 0);
+// Items saved before `kind` existed were all bowls; "custom" lines (staff-entered) don't count.
+export function cateringServings(lines: { kind?: string; qty: number }[]): number {
+  return lines.reduce((sum, l) => sum + (!l.kind || l.kind === "bowl" || l.kind === "buffet" ? l.qty || 0 : 0), 0);
+}
+
+// Discount entered as dollars or percent, clamped to [0, subtotal].
+export function discountAmount(subtotal: number, type: "amount" | "percent", value: number): number {
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  const raw = type === "percent" ? (subtotal * Math.min(value, 100)) / 100 : value;
+  return round2(Math.min(raw, subtotal));
 }
 
 // Display name for stored items, including orders saved before `name` existed.

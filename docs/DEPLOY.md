@@ -64,6 +64,12 @@ Customer / Not interested), notes, directions links and a Google map. Needs the
 `https://cupbop.mingyudev.com/*` and `http://localhost:3000/*`). The key is
 only sent to signed-in admins.
 
+**Manual orders & discounts**: "+ New order" on `/admin` (or "+ New order for …"
+on a target) enters a sale by hand: menu items (re-priced on the server) or
+custom items at any price, a $ or % discount, optional sales target. Saved as
+`source = 'admin'`, no store email, online minimums/blackouts don't apply. Any
+order's discount can be changed from its card (Details → Discount).
+
 ## 1. Supabase
 
 1. In the Supabase dashboard, pause or delete the project you're retiring so a free slot opens.
