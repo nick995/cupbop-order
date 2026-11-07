@@ -28,6 +28,16 @@ export function storeDate(iso: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: STORE_TIME_ZONE }).format(new Date(iso));
 }
 
+// HH:MM in store time, for <input type="time">.
+export function storeTime(iso: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: STORE_TIME_ZONE,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(new Date(iso));
+}
+
 export function relativeDay(date: string, today: string): string {
   const d = daysBetween(date, today);
   if (d === 0) return "today";

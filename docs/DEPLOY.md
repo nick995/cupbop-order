@@ -12,7 +12,7 @@ Cost: $0 (Vercel Hobby, Supabase Free, Resend Free, GitHub Actions free minutes)
 
 ## How store notifications work
 
-- Every new order emails everyone in `STORE_NOTIFICATION_EMAIL`
+- Every new order (website or entered by staff) emails everyone in `STORE_NOTIFICATION_EMAIL` plus every address in `ADMIN_EMAILS`
   (`mjung@cupbop.com`, `lryan@cupbop.com`) with a **Confirm order** button.
 - The button opens `/orders/confirm`, which shows the order and a **Confirm order**
   button. Clicking it sets the status to `Confirmed`.

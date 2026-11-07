@@ -4,7 +4,8 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { getSupabaseServerClient } from "@/lib/supabase";
-import { ORDER_STATUSES, storeToday } from "@/lib/orderActions";
+import { sendOrderEmail } from "@/lib/notifications";
+import { ORDER_STATUSES, STORE_TIME_ZONE, storeToday } from "@/lib/orderActions";
 import { ActivityKind, TARGET_STATUSES } from "@/lib/targets";
 import {
   LineSpec,
@@ -385,21 +386,80 @@ export async function deleteActivity(formData: FormData): Promise<void> {
     console.error("[admin] delete activity failed", id, error);
     targetPage(targetId, { error: "Could not delete that entry." });
   }
-  if (removed?.kind === "visit") {
-    const { data: lastVisit } = await supabase
-      .from("target_activities")
-      .select("created_at")
-      .eq("target_id", targetId)
-      .eq("kind", "visit")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    await supabase
-      .from("catering_targets")
-      .update({ last_visited_at: lastVisit?.created_at ?? null })
-      .eq("id", targetId);
-  }
+  if (removed?.kind === "visit") await refreshLastVisited(targetId);
   targetPage(targetId, { saved: "Entry deleted." });
+}
+
+// "Last visited" follows the newest visit left in the history.
+async function refreshLastVisited(targetId: string): Promise<void> {
+  const supabase = getSupabaseServerClient();
+  const { data: lastVisit } = await supabase
+    .from("target_activities")
+    .select("created_at")
+    .eq("target_id", targetId)
+    .eq("kind", "visit")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  await supabase
+    .from("catering_targets")
+    .update({ last_visited_at: lastVisit?.created_at ?? null })
+    .eq("id", targetId);
+}
+
+// Store-time wall clock (YYYY-MM-DD + HH:MM) → ISO timestamp, DST-aware.
+function storeTimeToIso(date: string, time: string): string {
+  const guess = new Date(`${date}T${time}:00Z`);
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: STORE_TIME_ZONE,
+      hourCycle: "h23",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+      .formatToParts(guess)
+      .map((p) => [p.type, p.value])
+  );
+  const shown = Date.parse(`${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:00Z`);
+  return new Date(guess.getTime() - (shown - guess.getTime())).toISOString();
+}
+
+// Fix a history entry: what it was, the note, and when it happened.
+export async function editActivity(formData: FormData): Promise<void> {
+  await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  const targetId = String(formData.get("target_id") ?? "");
+  if (!id || !targetId) return;
+  const patch: Record<string, string | null> = { note: cleanText(formData.get("note"), 2000) };
+  const kind = String(formData.get("kind") ?? "");
+  if (["visit", "call", "email", "note"].includes(kind)) patch.kind = kind;
+  const date = String(formData.get("date") ?? "");
+  const time = String(formData.get("time") ?? "");
+  if (isIsoDate(date)) {
+    if (date > storeToday()) targetPage(targetId, { error: "That date is in the future." });
+    patch.created_at = storeTimeToIso(date, /^\d{2}:\d{2}$/.test(time) ? time : "12:00");
+  }
+  const { data: before } = await getSupabaseServerClient()
+    .from("target_activities")
+    .select("kind")
+    .eq("id", id)
+    .eq("target_id", targetId)
+    .single();
+  if (!before) targetPage(targetId, { error: "That entry no longer exists." });
+  const { error } = await getSupabaseServerClient()
+    .from("target_activities")
+    .update(patch)
+    .eq("id", id)
+    .eq("target_id", targetId);
+  if (error) {
+    console.error("[admin] edit activity failed", id, error);
+    targetPage(targetId, { error: "Could not save that entry." });
+  }
+  if (before.kind === "visit" || patch.kind === "visit") await refreshLastVisited(targetId);
+  targetPage(targetId, { saved: "Entry updated." });
 }
 
 // --- Manual orders + discounts (/admin/orders/new) ---
@@ -486,15 +546,34 @@ export async function createManualOrder(
       source: "admin",
       created_by: adminEmail,
       target_id: targetId,
-      // No store email for staff-entered orders; reminders only apply to "New".
+      // Emailed below; this keeps the "still New" reminders from re-sending right away.
       last_notified_at: new Date().toISOString(),
     })
-    .select("id")
+    .select("*")
     .single();
   if (error) {
     console.error("[admin] manual order failed", error);
     return { error: "Could not save the order. Make sure db/schema.sql has been run in Supabase." };
   }
+  // Lets the store and the other admins know; a failed email doesn't undo the order.
+  const emailResult = await sendOrderEmail(
+    {
+      orderId: data.id,
+      customer_name: data.customer_name,
+      customer_phone: data.customer_phone,
+      customer_email: data.customer_email,
+      order_type: data.order_type,
+      pickup_date: data.pickup_date,
+      pickup_time: data.pickup_time,
+      delivery_address: data.delivery_address,
+      payment_method: data.payment_method,
+      special_instructions: data.special_instructions ?? undefined,
+      subtotal,
+      items,
+    },
+    { manual: { enteredBy: adminEmail, discount } }
+  ).catch((err) => ({ ok: false, error: String(err) }));
+  if (!emailResult.ok) console.warn("[admin] manual order email failed:", emailResult.error);
   if (targetId) {
     await supabase.from("catering_targets").update({ status: "Customer" }).eq("id", targetId).neq("status", "Customer");
     await logTargetActivity(

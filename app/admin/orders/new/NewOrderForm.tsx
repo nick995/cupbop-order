@@ -311,7 +311,7 @@ export default function NewOrderForm({
         {pending ? "Saving…" : `Save order — $${total.toFixed(2)}`}
       </button>
       <p className="text-center text-xs text-gray-500">
-        Staff orders don&apos;t send a store email and skip the online minimums and blackout dates.
+        Saving emails the order to the store and admins (not the customer). Staff orders skip the online minimums and blackout dates.
       </p>
     </form>
   );

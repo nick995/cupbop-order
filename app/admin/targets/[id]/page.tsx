@@ -13,8 +13,8 @@ import {
   TargetActivity,
   directionsUrl,
 } from "@/lib/targets";
-import { deleteActivity, deleteTarget, logActivity, updateTargetDetails } from "../../actions";
-import { Flash, LinkedOrder, StatusPill, formatWhen, orderTotal, relativeDay, salesOf, storeDate } from "../shared";
+import { deleteActivity, deleteTarget, editActivity, logActivity, updateTargetDetails } from "../../actions";
+import { Flash, LinkedOrder, StatusPill, formatWhen, orderTotal, relativeDay, salesOf, storeDate, storeTime } from "../shared";
 
 export const metadata: Metadata = {
   title: "Place — Cupbop Park City admin",
@@ -195,19 +195,55 @@ export default async function TargetPage({
                     {a.created_by && ` · ${a.created_by.split("@")[0]}`}
                   </p>
                   {a.note && <p className="mt-0.5 whitespace-pre-wrap text-sm">{a.note}</p>}
-                  <details className="mt-0.5">
-                    <summary className="cursor-pointer select-none list-none text-xs text-gray-400 hover:text-red-600 [&::-webkit-details-marker]:hidden">
-                      Delete
+                  <details className="group mt-0.5">
+                    <summary className="cursor-pointer select-none list-none text-xs text-gray-400 hover:text-black group-open:text-black [&::-webkit-details-marker]:hidden">
+                      Edit
                     </summary>
-                    <form action={deleteActivity} className="mt-1 flex flex-wrap items-center gap-2 rounded-lg bg-red-50 px-3 py-2">
-                      <input type="hidden" name="id" value={a.id} />
-                      <input type="hidden" name="target_id" value={t.id} />
-                      <input type="hidden" name="confirm" value="yes" />
-                      <span className="text-xs font-semibold text-red-800">Delete this entry?</span>
-                      <button className="rounded-full border-2 border-black bg-red-600 px-3 py-0.5 text-xs font-bold text-white">
-                        Yes, delete
-                      </button>
-                    </form>
+                    <div className="mt-1 rounded-xl border border-gray-300 bg-gray-50 p-3">
+                      <form action={editActivity} className="space-y-2">
+                        <input type="hidden" name="id" value={a.id} />
+                        <input type="hidden" name="target_id" value={t.id} />
+                        {KINDS.some((k) => k.value === a.kind) && <Chips name="kind" options={KINDS} defaultValue={a.kind} />}
+                        <textarea
+                          name="note"
+                          rows={3}
+                          defaultValue={a.note ?? ""}
+                          aria-label="Note"
+                          className="w-full resize-y rounded-xl border-2 border-black bg-white px-3 py-2 text-sm"
+                        />
+                        <div className="flex flex-wrap items-center gap-2">
+                          <input
+                            type="date"
+                            name="date"
+                            aria-label="Date"
+                            max={today}
+                            defaultValue={storeDate(a.created_at)}
+                            className="rounded-lg border-2 border-black bg-white px-2 py-1 text-sm"
+                          />
+                          <input
+                            type="time"
+                            name="time"
+                            aria-label="Time"
+                            defaultValue={storeTime(a.created_at)}
+                            className="rounded-lg border-2 border-black bg-white px-2 py-1 text-sm"
+                          />
+                          <button className="ml-auto rounded-full border-2 border-black bg-[#FFD200] px-4 py-1 text-xs font-bold">
+                            Save
+                          </button>
+                        </div>
+                      </form>
+                      <form action={deleteActivity} className="mt-3 flex flex-wrap items-center gap-2 border-t border-gray-300 pt-2">
+                        <input type="hidden" name="id" value={a.id} />
+                        <input type="hidden" name="target_id" value={t.id} />
+                        <label className="flex items-center gap-1.5 text-xs font-semibold text-red-800">
+                          <input type="checkbox" name="confirm" value="yes" required />
+                          Delete this entry
+                        </label>
+                        <button className="rounded-full border-2 border-black bg-red-600 px-3 py-0.5 text-xs font-bold text-white">
+                          Delete
+                        </button>
+                      </form>
+                    </div>
                   </details>
                 </li>
               ))}
