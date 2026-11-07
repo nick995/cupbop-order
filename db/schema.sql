@@ -121,3 +121,8 @@ create table if not exists public.target_activities (
 );
 create index if not exists target_activities_target_idx on public.target_activities (target_id, created_at desc);
 alter table public.target_activities enable row level security;
+
+-- Re-create the status check (fixes databases where 'Follow up' was saved with a stray character).
+alter table public.catering_targets drop constraint if exists catering_targets_status_check;
+alter table public.catering_targets add constraint catering_targets_status_check
+  check (status in ('To visit','Visited','Follow up','Customer','Not interested'));

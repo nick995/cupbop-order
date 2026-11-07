@@ -188,13 +188,12 @@ function cleanCoord(value: FormDataEntryValue | null, limit: number): number | n
   return value !== null && value !== "" && Number.isFinite(n) && Math.abs(n) <= limit ? n : null;
 }
 
-// Back to the targets page, scrolled to the card that changed.
-function targetsDone(message: string, ok = true, targetId?: string): never {
+function targetsDone(message: string, ok = true): never {
   revalidatePath("/admin/targets");
   const p = new URLSearchParams(
     ok ? { saved: message } : { error: "Could not save. Make sure db/schema.sql has been run in Supabase." }
   );
-  redirect(`/admin/targets?${p}${targetId ? `#target-${targetId}` : ""}`);
+  redirect(`/admin/targets?${p}`);
 }
 
 // Activity history is best-effort: a failed log never blocks the main change.
@@ -215,7 +214,7 @@ export async function addTarget(formData: FormData): Promise<void> {
   if (!name) redirect(`/admin/targets?${new URLSearchParams({ error: "Enter a name or pick a place from search." })}`);
 
   const website = cleanText(formData.get("website"), 300);
-  const { error } = await getSupabaseServerClient()
+  const { data, error } = await getSupabaseServerClient()
     .from("catering_targets")
     .insert({
       name,
@@ -226,86 +225,113 @@ export async function addTarget(formData: FormData): Promise<void> {
       lat: cleanCoord(formData.get("lat"), 90),
       lng: cleanCoord(formData.get("lng"), 180),
       notes: cleanText(formData.get("notes"), 2000),
-    });
-  if (error) console.error("[admin] add target failed", error);
-  targetsDone(`Added ${name}.`, !error);
-}
-
-export async function updateTarget(formData: FormData): Promise<void> {
-  const adminEmail = await requireAdmin();
-  const id = String(formData.get("id") ?? "");
-  const status = String(formData.get("status") ?? "");
-  if (!id || !(TARGET_STATUSES as readonly string[]).includes(status)) return;
-
-  // Choosing "Visited" counts as a visit (sets the last-visit date).
-  const patch: Record<string, string> = { status };
-  if (status === "Visited") patch.last_visited_at = new Date().toISOString();
-  let { error } = await getSupabaseServerClient().from("catering_targets").update(patch).eq("id", id);
-  if (error && status === "Visited") {
-    // Sales-tracking columns not added yet: still save the status.
-    ({ error } = await getSupabaseServerClient().from("catering_targets").update({ status }).eq("id", id));
-  }
-  if (error) console.error("[admin] update target failed", id, error);
-  if (!error) {
-    await logTargetActivity(id, status === "Visited" ? { kind: "visit" } : { kind: "status", status }, adminEmail);
-  }
-  targetsDone(`Marked ${status}.`, !error, id);
-}
-
-// Contact, phone, follow-up date and general notes.
-export async function updateTargetDetails(formData: FormData): Promise<void> {
-  await requireAdmin();
-  const id = String(formData.get("id") ?? "");
-  if (!id) return;
-  const followUp = String(formData.get("next_follow_up") ?? "");
-  const { error } = await getSupabaseServerClient()
-    .from("catering_targets")
-    .update({
-      contact_name: cleanText(formData.get("contact_name"), 200),
-      phone: cleanText(formData.get("phone"), 50),
-      next_follow_up: isIsoDate(followUp) ? followUp : null,
-      notes: cleanText(formData.get("notes"), 2000),
     })
-    .eq("id", id);
-  if (error) console.error("[admin] update target details failed", id, error);
-  targetsDone("Details saved.", !error, id);
+    .select("id")
+    .single();
+  if (error || !data) {
+    console.error("[admin] add target failed", error);
+    targetsDone("", false);
+  }
+  // Straight to the new place so the first visit can be logged.
+  targetPage(data.id, { saved: `Added ${name}.` });
 }
 
-// "Log visit / call / email / note" with an optional note and next follow-up.
+function targetPage(id: string, params: Record<string, string>): never {
+  revalidatePath("/admin/targets");
+  revalidatePath(`/admin/targets/${id}`);
+  redirect(`/admin/targets/${id}?${new URLSearchParams(params)}`);
+}
+
+const SCHEMA_ERROR = "Could not save. Make sure db/schema.sql has been run in Supabase.";
+
+// One form for "what happened": visit / call / email / note, notes, outcome
+// (optional status change) and the next follow-up.
 export async function logActivity(formData: FormData): Promise<void> {
   const adminEmail = await requireAdmin();
   const id = String(formData.get("id") ?? "");
-  const kind = String(formData.get("kind") ?? "");
+  const kind = String(formData.get("kind") ?? "visit");
   if (!id || !["visit", "call", "email", "note"].includes(kind)) return;
   const note = cleanText(formData.get("note"), 2000);
-  if (kind === "note" && !note) {
-    redirect(`/admin/targets?${new URLSearchParams({ error: "Write something to save a note." })}#target-${id}`);
-  }
+  const outcome = String(formData.get("outcome") ?? "");
+  const newStatus = (TARGET_STATUSES as readonly string[]).includes(outcome) ? outcome : null;
+  if (kind === "note" && !note && !newStatus) targetPage(id, { error: "Write a note first." });
 
   const supabase = getSupabaseServerClient();
-  const { error } = await supabase
-    .from("target_activities")
-    .insert({ target_id: id, kind, note, created_by: adminEmail });
-  if (error) {
-    console.error("[admin] log activity failed", id, error);
-    targetsDone("", false, id);
-  }
+  const { data: target } = await supabase.from("catering_targets").select("status").eq("id", id).single();
+  if (!target) targetPage(id, { error: "That place no longer exists." });
+
+  // A first visit with no explicit outcome moves the place out of "To visit".
+  const status = newStatus ?? (kind === "visit" && target.status === "To visit" ? "Visited" : null);
 
   const patch: Record<string, string | null> = {};
   if (kind === "visit") patch.last_visited_at = new Date().toISOString();
-  const followUp = String(formData.get("next_follow_up") ?? "");
-  if (isIsoDate(followUp)) patch.next_follow_up = followUp;
-  else if (formData.get("clear_follow_up")) patch.next_follow_up = null;
+  if (status) patch.status = status;
+  const followIn = String(formData.get("follow_up_in") ?? "");
+  const followDate = String(formData.get("follow_up_date") ?? "");
+  if (isIsoDate(followDate)) patch.next_follow_up = followDate;
+  else if (followIn === "none") patch.next_follow_up = null;
+  else if (/^\d+$/.test(followIn)) patch.next_follow_up = addDays(storeToday(), Number(followIn));
+  // Closed out (won or lost): drop the follow-up unless a specific date was picked.
+  if ((status === "Not interested" || status === "Customer") && !isIsoDate(followDate)) {
+    patch.next_follow_up = null;
+  }
+
+  // Update the place first so a failure doesn't leave a history entry that didn't happen.
   if (Object.keys(patch).length) {
     const { error: patchError } = await supabase.from("catering_targets").update(patch).eq("id", id);
-    if (patchError) console.error("[admin] target patch after activity failed", id, patchError);
+    if (patchError) {
+      console.error("[admin] target update for log failed", id, patchError);
+      targetPage(id, { error: SCHEMA_ERROR });
+    }
   }
-  // A first visit moves a place out of "To visit".
-  if (kind === "visit") {
-    await supabase.from("catering_targets").update({ status: "Visited" }).eq("id", id).eq("status", "To visit");
+  const { error } = await supabase.from("target_activities").insert({
+    target_id: id,
+    kind,
+    note,
+    status: status && status !== target.status ? status : null,
+    created_by: adminEmail,
+  });
+  if (error) {
+    console.error("[admin] log activity failed", id, error);
+    targetPage(id, { error: SCHEMA_ERROR });
   }
   const label = { visit: "Visit", call: "Call", email: "Email", note: "Note" }[kind];
-  targetsDone(`${label} logged.`, true, id);
+  targetPage(id, { saved: `${label} saved.` });
+}
+
+export async function updateTargetDetails(formData: FormData): Promise<void> {
+  const adminEmail = await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  const name = cleanText(formData.get("name"), 200);
+  if (!id) return;
+  if (!name) targetPage(id, { error: "Name can't be empty." });
+  const status = String(formData.get("status") ?? "");
+  const followUp = String(formData.get("next_follow_up") ?? "");
+  const website = cleanText(formData.get("website"), 300);
+
+  const supabase = getSupabaseServerClient();
+  const { data: before } = await supabase.from("catering_targets").select("status").eq("id", id).single();
+  const { error } = await supabase
+    .from("catering_targets")
+    .update({
+      name,
+      contact_name: cleanText(formData.get("contact_name"), 200),
+      phone: cleanText(formData.get("phone"), 50),
+      address: cleanText(formData.get("address"), 300),
+      website: website && !/^https?:\/\//i.test(website) ? `https://${website}` : website,
+      next_follow_up: isIsoDate(followUp) ? followUp : null,
+      notes: cleanText(formData.get("notes"), 2000),
+      ...((TARGET_STATUSES as readonly string[]).includes(status) && { status }),
+    })
+    .eq("id", id);
+  if (error) {
+    console.error("[admin] update target details failed", id, error);
+    targetPage(id, { error: SCHEMA_ERROR });
+  }
+  if (before && status && status !== before.status && (TARGET_STATUSES as readonly string[]).includes(status)) {
+    await logTargetActivity(id, { kind: "status", status }, adminEmail);
+  }
+  targetPage(id, { saved: "Details saved." });
 }
 
 // Attribute an order to a sales target. Linking also marks the target a Customer.
@@ -337,7 +363,7 @@ export async function deleteTarget(formData: FormData): Promise<void> {
   if (!id) return;
   const { error } = await getSupabaseServerClient().from("catering_targets").delete().eq("id", id);
   if (error) console.error("[admin] delete target failed", id, error);
-  targetsDone("Removed.", !error);
+  targetsDone(error ? "" : "Place removed.", !error);
 }
 
 // --- Manual orders + discounts (/admin/orders/new) ---

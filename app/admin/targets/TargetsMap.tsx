@@ -164,8 +164,8 @@ export default function TargetsMap({ apiKey, targets }: { apiKey: string | null;
             link.rel = "noopener";
             link.textContent = "Directions →";
             const jump = document.createElement("a");
-            jump.href = `#target-${t.id}`;
-            jump.textContent = "Details";
+            jump.href = `/admin/targets/${t.id}`;
+            jump.textContent = "Open";
             jump.style.marginLeft = "10px";
             box.append(title, status, link, jump);
             info.setContent(box);
@@ -199,8 +199,11 @@ export default function TargetsMap({ apiKey, targets }: { apiKey: string | null;
         </p>
       )}
 
-      <section className="mb-6 rounded-2xl border-2 border-black bg-white p-4 shadow-[0_3px_0_#000]">
-        <h2 className="text-lg font-extrabold">Add a place</h2>
+      <details className="group mb-4 rounded-2xl border-2 border-black bg-white p-4 shadow-[0_3px_0_#000]">
+        <summary className="cursor-pointer select-none list-none text-center text-base font-extrabold [&::-webkit-details-marker]:hidden">
+          <span className="group-open:hidden">+ Add a place</span>
+          <span className="hidden group-open:inline">Add a place</span>
+        </summary>
         {apiKey && !loadError && (
           <div className="mt-2">
             <span className="mb-1 block text-xs font-bold">Search Google Maps</span>
@@ -223,7 +226,7 @@ export default function TargetsMap({ apiKey, targets }: { apiKey: string | null;
             Add to list
           </button>
         </form>
-      </section>
+      </details>
     </>
   );
 }
