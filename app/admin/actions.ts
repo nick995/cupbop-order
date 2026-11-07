@@ -463,3 +463,13 @@ export async function setOrderDiscount(formData: FormData): Promise<void> {
   revalidatePath("/admin");
   revalidatePath("/admin/targets");
 }
+
+export async function deleteOrder(formData: FormData): Promise<void> {
+  await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  if (!id || formData.get("confirm") !== "yes") return;
+  const { error } = await getSupabaseServerClient().from("orders").delete().eq("id", id);
+  if (error) console.error("[admin] delete order failed", id, error);
+  revalidatePath("/admin");
+  revalidatePath("/admin/targets");
+}

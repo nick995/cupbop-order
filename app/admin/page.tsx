@@ -5,7 +5,7 @@ import { requireAdmin } from "@/lib/adminAuth";
 import { ORDER_STATUSES, OrderStatus, STORE_TIME_ZONE, storeToday } from "@/lib/orderActions";
 import { cateringServings, itemDisplayName, priceDifferenceLabel } from "@/lib/menu";
 import { addDays } from "@/lib/storeSettings";
-import { logout, setOrderDiscount, setOrderStatus, setOrderTarget } from "./actions";
+import { deleteOrder, logout, setOrderDiscount, setOrderStatus, setOrderTarget } from "./actions";
 
 export const metadata: Metadata = {
   title: "Orders — Cupbop Park City admin",
@@ -353,6 +353,17 @@ function OrderCard({ order: o, targets }: { order: OrderRow; targets: TargetOpti
             <button className="shrink-0 rounded-full border-2 border-black bg-[#FFD200] px-3 py-1 text-xs font-bold">Save</button>
           </form>
         )}
+        <details className="mt-3 border-t border-gray-200 pt-3 text-sm">
+          <summary className="cursor-pointer select-none text-xs font-semibold text-red-600 underline">Delete order</summary>
+          <form action={deleteOrder} className="mt-2 flex flex-wrap items-center gap-2 rounded-lg bg-red-50 px-3 py-2">
+            <input type="hidden" name="id" value={o.id} />
+            <input type="hidden" name="confirm" value="yes" />
+            <span className="text-xs text-red-900">Permanently delete this order? This can&apos;t be undone.</span>
+            <button className="ml-auto rounded-full border-2 border-red-700 bg-red-600 px-3 py-1 text-xs font-bold text-white">
+              Yes, delete
+            </button>
+          </form>
+        </details>
       </details>
 
       <div className="flex flex-wrap gap-1.5 px-4 pb-3 pt-3">
