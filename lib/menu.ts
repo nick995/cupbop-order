@@ -313,11 +313,31 @@ export function cateringServings(lines: { kind?: string; qty: number }[]): numbe
   return lines.reduce((sum, l) => sum + (!l.kind || l.kind === "bowl" || l.kind === "buffet" ? l.qty || 0 : 0), 0);
 }
 
-// Discount entered as dollars or percent, clamped to [0, subtotal].
-export function discountAmount(subtotal: number, type: "amount" | "percent", value: number): number {
-  if (!Number.isFinite(value) || value <= 0) return 0;
-  const raw = type === "percent" ? (subtotal * Math.min(value, 100)) / 100 : value;
-  return round2(Math.min(raw, subtotal));
+// Price adjustment = subtotal - what the customer actually pays.
+//   total:   staff types the final price; can be above the menu price (negative discount)
+//   amount:  dollars off;  percent: percent off (both capped at the subtotal)
+// `raw` is the form value; blank means "no adjustment".
+export type DiscountType = "total" | "amount" | "percent";
+
+export function parseDiscountType(value: unknown): DiscountType {
+  return value === "amount" || value === "percent" ? value : "total";
+}
+
+export function discountAmount(subtotal: number, type: DiscountType, raw: string | number | null | undefined): number {
+  if (raw === null || raw === undefined || String(raw).trim() === "") return 0;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) return 0;
+  if (type === "total") return round2(subtotal - Math.min(value, 1_000_000));
+  const off = type === "percent" ? (subtotal * Math.min(value, 100)) / 100 : value;
+  return round2(Math.min(off, subtotal));
+}
+
+// "−$40.00 (−8.0%)" / "+$15.00 (+3.0%)" relative to the menu price.
+export function priceDifferenceLabel(subtotal: number, discount: number): string {
+  const diff = -discount;
+  const sign = diff < 0 ? "−" : "+";
+  const pct = subtotal > 0 ? ` (${sign}${Math.abs((diff / subtotal) * 100).toFixed(1)}%)` : "";
+  return `${sign}$${Math.abs(diff).toFixed(2)}${pct}`;
 }
 
 // Display name for stored items, including orders saved before `name` existed.

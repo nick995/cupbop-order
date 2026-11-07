@@ -6,7 +6,14 @@ import { revalidatePath } from "next/cache";
 import { getSupabaseServerClient } from "@/lib/supabase";
 import { ORDER_STATUSES, storeToday } from "@/lib/orderActions";
 import { TARGET_STATUSES } from "@/lib/targets";
-import { LineSpec, MAX_LINE_QTY, OrderItem, buildOrderItem, discountAmount } from "@/lib/menu";
+import {
+  LineSpec,
+  MAX_LINE_QTY,
+  OrderItem,
+  buildOrderItem,
+  discountAmount,
+  parseDiscountType,
+} from "@/lib/menu";
 import { MAX_LEAD_DAYS, addDays, getStoreSettings, isIsoDate } from "@/lib/storeSettings";
 import {
   ADMIN_COOKIE,
@@ -316,8 +323,11 @@ export async function createManualOrder(
   }
 
   const subtotal = Math.round(items.reduce((sum, it) => sum + it.lineTotal, 0) * 100) / 100;
-  const discountType = formData.get("discount_type") === "percent" ? "percent" : "amount";
-  const discount = discountAmount(subtotal, discountType, Number(formData.get("discount_value") ?? 0));
+  const discount = discountAmount(
+    subtotal,
+    parseDiscountType(formData.get("discount_type")),
+    String(formData.get("discount_value") ?? "")
+  );
   const targetId = String(formData.get("target_id") ?? "") || null;
 
   const supabase = getSupabaseServerClient();
@@ -364,8 +374,11 @@ export async function setOrderDiscount(formData: FormData): Promise<void> {
   const supabase = getSupabaseServerClient();
   const { data: order } = await supabase.from("orders").select("subtotal").eq("id", id).single();
   if (!order) return;
-  const discountType = formData.get("discount_type") === "percent" ? "percent" : "amount";
-  const discount = discountAmount(Number(order.subtotal), discountType, Number(formData.get("discount_value") ?? 0));
+  const discount = discountAmount(
+    Number(order.subtotal),
+    parseDiscountType(formData.get("discount_type")),
+    String(formData.get("discount_value") ?? "")
+  );
   const { error } = await supabase.from("orders").update({ discount }).eq("id", id);
   if (error) console.error("[admin] discount update failed", id, error);
   revalidatePath("/admin");

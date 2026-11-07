@@ -3,7 +3,7 @@ import Link from "next/link";
 import { getSupabaseServerClient } from "@/lib/supabase";
 import { requireAdmin } from "@/lib/adminAuth";
 import { ORDER_STATUSES, OrderStatus, STORE_TIME_ZONE, storeToday } from "@/lib/orderActions";
-import { cateringServings, itemDisplayName } from "@/lib/menu";
+import { cateringServings, itemDisplayName, priceDifferenceLabel } from "@/lib/menu";
 import { logout, setOrderDiscount, setOrderStatus, setOrderTarget } from "./actions";
 
 export const metadata: Metadata = {
@@ -197,7 +197,7 @@ function OrderCard({ order: o, targets }: { order: OrderRow; targets: TargetOpti
           <p className="text-sm">
             <span className="font-bold">{o.customer_name}</span>
             <span className="text-gray-600"> · {o.order_type} · {bowls} serving{bowls === 1 ? "" : "s"} · </span>
-            {discount > 0 && <span className="text-gray-400 line-through">${subtotal.toFixed(2)}</span>}{" "}
+            {discount !== 0 && <span className="text-gray-400 line-through">${subtotal.toFixed(2)}</span>}{" "}
             <span className="font-semibold">${total.toFixed(2)}</span>
           </p>
           {o.source === "admin" && (
@@ -240,9 +240,11 @@ function OrderCard({ order: o, targets }: { order: OrderRow; targets: TargetOpti
           ))}
         </ul>
         <div className="mt-2 space-y-0.5 border-t border-gray-200 pt-2 text-sm">
-          <div className="flex justify-between"><span>Subtotal</span><span>${subtotal.toFixed(2)}</span></div>
-          {discount > 0 && (
-            <div className="flex justify-between text-green-700"><span>Discount</span><span>−${discount.toFixed(2)}</span></div>
+          <div className="flex justify-between"><span>Menu price</span><span>${subtotal.toFixed(2)}</span></div>
+          {discount !== 0 && (
+            <div className={`flex justify-between font-semibold ${discount > 0 ? "text-green-700" : "text-amber-700"}`}>
+              <span>Difference</span><span>{priceDifferenceLabel(subtotal, discount)}</span>
+            </div>
           )}
           <div className="flex justify-between font-extrabold"><span>Total</span><span>${total.toFixed(2)}</span></div>
         </div>
@@ -251,10 +253,11 @@ function OrderCard({ order: o, targets }: { order: OrderRow; targets: TargetOpti
         )}
         <form action={setOrderDiscount} className="mt-3 flex items-center gap-2 border-t border-gray-200 pt-3 text-sm">
           <input type="hidden" name="id" value={o.id} />
-          <label htmlFor={`discount-${o.id}`} className="shrink-0 font-bold">Discount</label>
-          <select name="discount_type" defaultValue="amount" aria-label="Discount type" className="rounded-lg border-2 border-black bg-white px-1.5 py-1">
-            <option value="amount">$</option>
-            <option value="percent">%</option>
+          <label htmlFor={`discount-${o.id}`} className="shrink-0 font-bold">Charge</label>
+          <select name="discount_type" defaultValue="total" aria-label="How to enter the price" className="rounded-lg border-2 border-black bg-white px-1.5 py-1">
+            <option value="total">Total $</option>
+            <option value="amount">$ off</option>
+            <option value="percent">% off</option>
           </select>
           <input
             id={`discount-${o.id}`}
@@ -263,8 +266,8 @@ function OrderCard({ order: o, targets }: { order: OrderRow; targets: TargetOpti
             min={0}
             step="0.01"
             inputMode="decimal"
-            defaultValue={discount > 0 ? discount.toFixed(2) : ""}
-            placeholder="0"
+            defaultValue={discount !== 0 ? total.toFixed(2) : ""}
+            placeholder={subtotal.toFixed(2)}
             className="w-24 min-w-0 rounded-lg border-2 border-black px-2 py-1 text-right"
           />
           <button className="shrink-0 rounded-full border-2 border-black bg-[#FFD200] px-3 py-1 text-xs font-bold">Save</button>

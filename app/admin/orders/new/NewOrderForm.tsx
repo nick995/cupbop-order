@@ -11,7 +11,9 @@ import {
   PROTEINS,
   SPICY_LEVELS,
   buildOrderItem,
+  DiscountType,
   discountAmount,
+  priceDifferenceLabel,
 } from "@/lib/menu";
 import { ORDER_STATUSES } from "@/lib/orderActions";
 import { createManualOrder } from "../../actions";
@@ -66,13 +68,13 @@ export default function NewOrderForm({
   const [state, formAction, pending] = useActionState(createManualOrder, {});
   const [rows, setRows] = useState<Row[]>(() => [newRow()]);
   const [orderType, setOrderType] = useState<"Pickup" | "Catering">("Catering");
-  const [discountType, setDiscountType] = useState<"amount" | "percent">("amount");
+  const [discountType, setDiscountType] = useState<DiscountType>("total");
   const [discountValue, setDiscountValue] = useState("");
   const [targetId, setTargetId] = useState(initialTargetId);
   const target = targets.find((t) => t.id === targetId);
 
   const subtotal = Math.round(rows.reduce((sum, r) => sum + rowTotal(r), 0) * 100) / 100;
-  const discount = discountAmount(subtotal, discountType, Number(discountValue));
+  const discount = discountAmount(subtotal, discountType, discountValue);
   const total = subtotal - discount;
 
   const update = (key: number, patch: Partial<Row>) =>
@@ -247,20 +249,22 @@ export default function NewOrderForm({
 
         <div className="mt-4 space-y-2 border-t-2 border-black pt-3 text-sm">
           <div className="flex justify-between">
-            <span>Subtotal</span>
+            <span>Menu price</span>
             <span className="font-semibold">${subtotal.toFixed(2)}</span>
           </div>
-          <div className="flex items-center justify-between gap-2">
-            <span>Discount</span>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span>Price you&apos;re charging</span>
             <div className="flex items-center gap-2">
               <select
                 name="discount_type"
                 value={discountType}
-                onChange={(e) => setDiscountType(e.target.value as "amount" | "percent")}
+                onChange={(e) => setDiscountType(e.target.value as DiscountType)}
+                aria-label="How to enter the price"
                 className="rounded-lg border-2 border-black bg-white px-2 py-1"
               >
-                <option value="amount">$</option>
-                <option value="percent">%</option>
+                <option value="total">Total $</option>
+                <option value="amount">$ off</option>
+                <option value="percent">% off</option>
               </select>
               <input
                 name="discount_value"
@@ -268,14 +272,19 @@ export default function NewOrderForm({
                 min={0}
                 step="0.01"
                 inputMode="decimal"
-                placeholder="0"
+                placeholder={discountType === "total" ? subtotal.toFixed(2) : "0"}
                 value={discountValue}
                 onChange={(e) => setDiscountValue(e.target.value)}
-                className="w-24 rounded-lg border-2 border-black px-2 py-1 text-right"
+                className="w-28 rounded-lg border-2 border-black px-2 py-1 text-right"
               />
-              <span className="w-20 text-right font-semibold text-green-700">−${discount.toFixed(2)}</span>
             </div>
           </div>
+          {discount !== 0 && (
+            <div className={`flex justify-between font-semibold ${discount > 0 ? "text-green-700" : "text-amber-700"}`}>
+              <span>Difference from menu</span>
+              <span>{priceDifferenceLabel(subtotal, discount)}</span>
+            </div>
+          )}
           <div className="flex justify-between text-base font-extrabold">
             <span>Total</span>
             <span>${total.toFixed(2)}</span>
