@@ -4,7 +4,7 @@ import { getSupabaseServerClient } from "@/lib/supabase";
 import { requireAdmin } from "@/lib/adminAuth";
 import { ORDER_STATUSES, OrderStatus, STORE_TIME_ZONE, storeToday } from "@/lib/orderActions";
 import { cateringServings, itemDisplayName, priceDifferenceLabel } from "@/lib/menu";
-import { addDays, formatDay, isIsoDate } from "@/lib/storeSettings";
+import { addDays } from "@/lib/storeSettings";
 import { logout, setOrderDiscount, setOrderStatus, setOrderTarget } from "./actions";
 
 export const metadata: Metadata = {
@@ -12,7 +12,7 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-type View = "upcoming" | "past" | "all" | "prep";
+type View = "upcoming" | "past" | "all";
 
 interface OrderRow {
   id: string;
@@ -53,27 +53,13 @@ export default async function AdminOrdersPage({
 }) {
   const adminEmail = await requireAdmin();
   const params = await searchParams;
-  const view: View =
-    params.view === "past" || params.view === "all" || params.view === "prep" ? params.view : "upcoming";
+  const view: View = params.view === "past" || params.view === "all" ? params.view : "upcoming";
   const statusFilter = ORDER_STATUSES.find((s) => s === params.status);
   // Characters that would break PostgREST's or() filter syntax are dropped.
   const q = typeof params.q === "string" ? params.q.replace(/[,()%*\\]/g, " ").trim().slice(0, 100) : "";
   const today = storeToday();
 
   const supabase = getSupabaseServerClient();
-
-  // Prep view: one day's orders. Defaults to the next day that has orders.
-  let prepDate = typeof params.date === "string" && isIsoDate(params.date) ? params.date : "";
-  if (view === "prep" && !prepDate) {
-    const { data: next } = await supabase
-      .from("orders")
-      .select("pickup_date")
-      .gte("pickup_date", today)
-      .neq("status", "Cancelled")
-      .order("pickup_date")
-      .limit(1);
-    prepDate = next?.[0]?.pickup_date ?? today;
-  }
 
   let query = supabase.from("orders").select("*");
   if (q) {
@@ -82,8 +68,6 @@ export default async function AdminOrdersPage({
       .or(`customer_name.ilike.%${q}%,customer_phone.ilike.%${q}%,customer_email.ilike.%${q}%`)
       .order("pickup_date", { ascending: false })
       .limit(100);
-  } else if (view === "prep") {
-    query = query.eq("pickup_date", prepDate).neq("status", "Cancelled").order("pickup_time");
   } else if (view === "upcoming") {
     query = query.gte("pickup_date", today).order("pickup_date").order("pickup_time").limit(200);
   } else if (view === "past") {
@@ -91,7 +75,7 @@ export default async function AdminOrdersPage({
   } else {
     query = query.order("created_at", { ascending: false }).limit(200);
   }
-  if (statusFilter && view !== "prep") query = query.eq("status", statusFilter);
+  if (statusFilter) query = query.eq("status", statusFilter);
 
   // Month-to-date sales and the coming week, for the stats strip.
   const monthStart = `${today.slice(0, 8)}01`;
@@ -126,7 +110,7 @@ export default async function AdminOrdersPage({
     const v = next.view ?? view;
     const s = "status" in next ? next.status : statusFilter;
     if (v !== "upcoming") p.set("view", v);
-    if (s && v !== "prep") p.set("status", s);
+    if (s) p.set("status", s);
     const qs = p.toString();
     return qs ? `/admin?${qs}` : "/admin";
   };
@@ -209,17 +193,16 @@ export default async function AdminOrdersPage({
         ) : (
         <>
         <nav className="mb-3 flex flex-wrap gap-2">
-          {(["upcoming", "prep", "past", "all"] as View[]).map((v) => (
+          {(["upcoming", "past", "all"] as View[]).map((v) => (
             <Link
               key={v}
               href={href({ view: v })}
               className={`rounded-full border-2 border-black px-4 py-1.5 text-sm font-bold capitalize ${v === view ? "bg-black text-[#FFD200]" : "bg-white"}`}
             >
-              {v === "prep" ? "🍳 Prep" : v}
+              {v}
             </Link>
           ))}
         </nav>
-        {view !== "prep" && (
         <nav className="mb-5 flex flex-wrap gap-1.5">
           <Link
             href={href({ status: undefined })}
@@ -237,18 +220,15 @@ export default async function AdminOrdersPage({
             </Link>
           ))}
         </nav>
-        )}
         </>
         )}
-
-        {view === "prep" && !q && !error && <PrepList date={prepDate} today={today} orders={orders} />}
 
         {error && (
           <p className="rounded-lg bg-red-100 px-3 py-2 text-sm font-semibold text-red-800">
             Could not load orders. Refresh to try again.
           </p>
         )}
-        {!error && orders.length === 0 && (q || view !== "prep") && (
+        {!error && orders.length === 0 && (
           <p className="py-12 text-center text-sm text-gray-600">No orders here.</p>
         )}
 
@@ -392,88 +372,6 @@ function OrderCard({ order: o, targets }: { order: OrderRow; targets: TargetOpti
         ))}
       </div>
     </li>
-  );
-}
-
-// Kitchen prep for one day: every item added up across that day's orders.
-function PrepList({ date, today, orders }: { date: string; today: string; orders: OrderRow[] }) {
-  const totals = new Map<string, { label: string; detail: string; qty: number; kind: string }>();
-  for (const o of orders) {
-    for (const it of o.items) {
-      const detail = [it.spicyLevel, ...(it.mods ?? [])].filter(Boolean).join(" · ");
-      const key = `${itemDisplayName(it)}|${detail}`;
-      const row = totals.get(key) ?? { label: itemDisplayName(it), detail, qty: 0, kind: it.kind ?? "bowl" };
-      row.qty += it.qty || 0;
-      totals.set(key, row);
-    }
-  }
-  const groups: { title: string; kinds: string[] }[] = [
-    { title: "Bowls", kinds: ["bowl"] },
-    { title: "Buffet trays (people)", kinds: ["buffet"] },
-    { title: "Wings, sides, drinks & other", kinds: ["extra", "custom"] },
-  ];
-  const rows = [...totals.values()].sort((a, b) => a.label.localeCompare(b.label) || a.detail.localeCompare(b.detail));
-  const servings = orders.reduce((sum, o) => sum + cateringServings(o.items), 0);
-
-  return (
-    <section className="mb-6 rounded-2xl border-2 border-black bg-white p-4 shadow-[0_3px_0_#000]">
-      <form action="/admin" className="flex flex-wrap items-center gap-2">
-        <input type="hidden" name="view" value="prep" />
-        <h2 className="mr-auto text-lg font-extrabold">
-          Prep for {formatDay(date)}
-          {date === today && " (today)"}
-        </h2>
-        <Link href={`/admin?view=prep&date=${addDays(date, -1)}`} className="rounded-full border-2 border-black px-2.5 py-0.5 text-sm font-bold" aria-label="Previous day">←</Link>
-        <input type="date" name="date" defaultValue={date} className="rounded-lg border-2 border-black px-2 py-1 text-sm" />
-        <button className="rounded-full border-2 border-black bg-white px-3 py-1 text-xs font-bold">Go</button>
-        <Link href={`/admin?view=prep&date=${addDays(date, 1)}`} className="rounded-full border-2 border-black px-2.5 py-0.5 text-sm font-bold" aria-label="Next day">→</Link>
-      </form>
-      <p className="mt-1 text-sm text-gray-600">
-        {orders.length} order{orders.length === 1 ? "" : "s"} · {servings} servings (cancelled orders excluded)
-      </p>
-
-      {orders.length === 0 ? (
-        <p className="py-6 text-center text-sm text-gray-600">Nothing to prep this day.</p>
-      ) : (
-        <>
-          {groups.map((g) => {
-            const list = rows.filter((r) => g.kinds.includes(r.kind));
-            if (!list.length) return null;
-            return (
-              <div key={g.title} className="mt-3">
-                <p className="text-xs font-extrabold uppercase tracking-wide text-gray-600">{g.title}</p>
-                <ul className="divide-y divide-gray-100">
-                  {list.map((r) => (
-                    <li key={`${r.label}|${r.detail}`} className="flex items-baseline gap-3 py-1 text-sm">
-                      <span className="w-10 shrink-0 text-right text-base font-extrabold">{r.qty}×</span>
-                      <span>
-                        <strong>{r.label}</strong>
-                        {r.detail && <span className="text-gray-600"> · {r.detail}</span>}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            );
-          })}
-          <div className="mt-4 border-t-2 border-black pt-2">
-            <p className="text-xs font-extrabold uppercase tracking-wide text-gray-600">Schedule</p>
-            <ul className="text-sm">
-              {orders.map((o) => (
-                <li key={o.id} className="flex gap-3 py-0.5">
-                  <a href={`#order-${o.id}`} className="w-20 shrink-0 font-bold underline">{formatTime(o.pickup_time)}</a>
-                  <span className="min-w-0">
-                    {o.customer_name} · {o.order_type}
-                    {o.status === "New" && <span className="font-bold text-red-600"> · not confirmed</span>}
-                    {o.delivery_address && <span className="block truncate text-xs text-gray-600">📍 {o.delivery_address}</span>}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </>
-      )}
-    </section>
   );
 }
 
