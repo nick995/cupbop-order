@@ -366,6 +366,42 @@ export async function deleteTarget(formData: FormData): Promise<void> {
   targetsDone(error ? "" : "Place removed.", !error);
 }
 
+// Removes one history entry. Deleting a visit re-derives "last visited" from
+// the visits that remain; status and follow-up are left as they are.
+export async function deleteActivity(formData: FormData): Promise<void> {
+  await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  const targetId = String(formData.get("target_id") ?? "");
+  if (!id || !targetId || formData.get("confirm") !== "yes") return;
+  const supabase = getSupabaseServerClient();
+  const { data: removed, error } = await supabase
+    .from("target_activities")
+    .delete()
+    .eq("id", id)
+    .eq("target_id", targetId)
+    .select("kind")
+    .maybeSingle();
+  if (error) {
+    console.error("[admin] delete activity failed", id, error);
+    targetPage(targetId, { error: "Could not delete that entry." });
+  }
+  if (removed?.kind === "visit") {
+    const { data: lastVisit } = await supabase
+      .from("target_activities")
+      .select("created_at")
+      .eq("target_id", targetId)
+      .eq("kind", "visit")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    await supabase
+      .from("catering_targets")
+      .update({ last_visited_at: lastVisit?.created_at ?? null })
+      .eq("id", targetId);
+  }
+  targetPage(targetId, { saved: "Entry deleted." });
+}
+
 // --- Manual orders + discounts (/admin/orders/new) ---
 
 interface ManualLine {

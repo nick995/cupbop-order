@@ -13,7 +13,7 @@ import {
   TargetActivity,
   directionsUrl,
 } from "@/lib/targets";
-import { deleteTarget, logActivity, updateTargetDetails } from "../../actions";
+import { deleteActivity, deleteTarget, logActivity, updateTargetDetails } from "../../actions";
 import { Flash, LinkedOrder, StatusPill, formatWhen, orderTotal, relativeDay, salesOf, storeDate } from "../shared";
 
 export const metadata: Metadata = {
@@ -195,6 +195,20 @@ export default async function TargetPage({
                     {a.created_by && ` · ${a.created_by.split("@")[0]}`}
                   </p>
                   {a.note && <p className="mt-0.5 whitespace-pre-wrap text-sm">{a.note}</p>}
+                  <details className="mt-0.5">
+                    <summary className="cursor-pointer select-none list-none text-xs text-gray-400 hover:text-red-600 [&::-webkit-details-marker]:hidden">
+                      Delete
+                    </summary>
+                    <form action={deleteActivity} className="mt-1 flex flex-wrap items-center gap-2 rounded-lg bg-red-50 px-3 py-2">
+                      <input type="hidden" name="id" value={a.id} />
+                      <input type="hidden" name="target_id" value={t.id} />
+                      <input type="hidden" name="confirm" value="yes" />
+                      <span className="text-xs font-semibold text-red-800">Delete this entry?</span>
+                      <button className="rounded-full border-2 border-black bg-red-600 px-3 py-0.5 text-xs font-bold text-white">
+                        Yes, delete
+                      </button>
+                    </form>
+                  </details>
                 </li>
               ))}
             </ol>
