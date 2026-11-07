@@ -57,7 +57,15 @@ interface PickedPlace {
 
 const EMPTY_PLACE: PickedPlace = { name: "", address: "", phone: "", website: "", place_id: "", lat: "", lng: "" };
 
-export default function TargetsMap({ apiKey, targets }: { apiKey: string | null; targets: CateringTarget[] }) {
+export default function TargetsMap({
+  apiKey,
+  targets,
+  owner,
+}: {
+  apiKey: string | null;
+  targets: CateringTarget[];
+  owner: string;
+}) {
   const mapEl = useRef<HTMLDivElement>(null);
   const searchEl = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
@@ -201,8 +209,8 @@ export default function TargetsMap({ apiKey, targets }: { apiKey: string | null;
 
       <details className="group mb-4 rounded-2xl border-2 border-black bg-white p-4 shadow-[0_3px_0_#000]">
         <summary className="cursor-pointer select-none list-none text-center text-base font-extrabold [&::-webkit-details-marker]:hidden">
-          <span className="group-open:hidden">+ Add a place</span>
-          <span className="hidden group-open:inline">Add a place</span>
+          <span className="group-open:hidden">+ Add a place to {owner}’s list</span>
+          <span className="hidden group-open:inline">Add a place to {owner}’s list</span>
         </summary>
         {apiKey && !loadError && (
           <div className="mt-2">
@@ -211,6 +219,7 @@ export default function TargetsMap({ apiKey, targets }: { apiKey: string | null;
           </div>
         )}
         <form action={addTarget} onSubmit={() => setTimeout(() => setPlace(EMPTY_PLACE), 0)} className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <input type="hidden" name="owner" value={owner} />
           <input type="hidden" {...field("place_id")} />
           <input type="hidden" {...field("lat")} />
           <input type="hidden" {...field("lng")} />

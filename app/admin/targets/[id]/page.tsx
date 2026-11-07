@@ -8,10 +8,12 @@ import { formatDay } from "@/lib/storeSettings";
 import {
   ACTIVITY_LABELS,
   CateringTarget,
+  STAFF,
   TARGET_STATUSES,
   TARGET_STATUS_COLORS,
   TargetActivity,
   directionsUrl,
+  ownerOf,
 } from "@/lib/targets";
 import { deleteActivity, deleteTarget, editActivity, logActivity, updateTargetDetails } from "../../actions";
 import { Flash, LinkedOrder, StatusPill, formatWhen, orderTotal, relativeDay, salesOf, storeDate, storeTime } from "../shared";
@@ -91,8 +93,8 @@ export default async function TargetPage({
   return (
     <div className="min-h-screen bg-[#fffdf5]">
       <header className="sticky top-0 z-10 flex items-center justify-between border-b-2 border-black bg-[#FFD200] px-4 py-3 sm:px-6">
-        <Link href="/admin/targets" className="text-sm font-bold underline">
-          ← All places
+        <Link href={`/admin/targets?owner=${encodeURIComponent(ownerOf(t))}`} className="text-sm font-bold underline">
+          ← {ownerOf(t)}’s places
         </Link>
         <Link href="/admin" className="text-sm font-bold underline">
           Orders
@@ -120,6 +122,7 @@ export default async function TargetPage({
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
+            <span className="rounded-full bg-gray-100 px-2.5 py-1">📋 {ownerOf(t)}’s list</span>
             {(lastVisit || t.status === "To visit") && (
               <span className="rounded-full bg-gray-100 px-2.5 py-1">
                 {lastVisit ? `🚶 Last visit ${formatDay(lastVisit)} (${relativeDay(lastVisit, today)})` : "🚶 Not visited yet"}
@@ -294,6 +297,14 @@ export default async function TargetPage({
               <select name="status" defaultValue={t.status} className="w-full rounded-xl border-2 border-black bg-white px-3 py-2 text-sm">
                 {TARGET_STATUSES.map((s) => (
                   <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-bold">On whose list</span>
+              <select name="owner" defaultValue={ownerOf(t)} className="w-full rounded-xl border-2 border-black bg-white px-3 py-2 text-sm">
+                {[...new Set([...STAFF.map((p) => p.name as string), ownerOf(t)])].map((name) => (
+                  <option key={name} value={name}>{name}</option>
                 ))}
               </select>
             </label>

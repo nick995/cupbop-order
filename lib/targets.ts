@@ -17,9 +17,27 @@ export interface CateringTarget {
   contact_name?: string | null;      // optional until the sales-tracking columns exist
   next_follow_up?: string | null;    // YYYY-MM-DD
   last_visited_at?: string | null;
+  owner?: string | null;             // staff name; missing until the owner column exists
   created_at: string;
   updated_at: string;
 }
+
+// Whose list a place is on. Several logins can belong to one person.
+export const STAFF = [
+  { name: "MinGyu", emails: ["mjung@cupbop.com", "mingyu995@gmail.com"] },
+  { name: "Ryan", emails: ["lryan@cupbop.com"] },
+] as const;
+export const DEFAULT_OWNER = STAFF[0].name;
+
+export function staffName(email: string): string {
+  const e = email.trim().toLowerCase();
+  const person = STAFF.find((s) => (s.emails as readonly string[]).includes(e));
+  if (person) return person.name;
+  const local = e.split("@")[0];
+  return local.charAt(0).toUpperCase() + local.slice(1);
+}
+
+export const ownerOf = (t: Pick<CateringTarget, "owner">) => t.owner || DEFAULT_OWNER;
 
 export const ACTIVITY_KINDS = ["visit", "call", "email", "note", "status", "order"] as const;
 export type ActivityKind = (typeof ACTIVITY_KINDS)[number];

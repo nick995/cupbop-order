@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 import { getSupabaseServerClient } from "@/lib/supabase";
 import { sendOrderEmail } from "@/lib/notifications";
 import { ORDER_STATUSES, STORE_TIME_ZONE, storeToday } from "@/lib/orderActions";
-import { ActivityKind, TARGET_STATUSES } from "@/lib/targets";
+import { ActivityKind, STAFF, TARGET_STATUSES, staffName } from "@/lib/targets";
 import {
   LineSpec,
   MAX_LINE_QTY,
@@ -209,8 +209,14 @@ async function logTargetActivity(
   if (error) console.error("[admin] activity log failed", targetId, error);
 }
 
+// A known staff name from the form, else whoever is signed in.
+function ownerFrom(formData: FormData, adminEmail: string): string {
+  const owner = String(formData.get("owner") ?? "");
+  return STAFF.some((s) => s.name === owner) ? owner : staffName(adminEmail);
+}
+
 export async function addTarget(formData: FormData): Promise<void> {
-  await requireAdmin();
+  const adminEmail = await requireAdmin();
   const name = cleanText(formData.get("name"), 200);
   if (!name) redirect(`/admin/targets?${new URLSearchParams({ error: "Enter a name or pick a place from search." })}`);
 
@@ -226,6 +232,7 @@ export async function addTarget(formData: FormData): Promise<void> {
       lat: cleanCoord(formData.get("lat"), 90),
       lng: cleanCoord(formData.get("lng"), 180),
       notes: cleanText(formData.get("notes"), 2000),
+      owner: ownerFrom(formData, adminEmail),
     })
     .select("id")
     .single();
@@ -322,6 +329,7 @@ export async function updateTargetDetails(formData: FormData): Promise<void> {
       website: website && !/^https?:\/\//i.test(website) ? `https://${website}` : website,
       next_follow_up: isIsoDate(followUp) ? followUp : null,
       notes: cleanText(formData.get("notes"), 2000),
+      ...(formData.has("owner") && { owner: ownerFrom(formData, adminEmail) }),
       ...((TARGET_STATUSES as readonly string[]).includes(status) && { status }),
     })
     .eq("id", id);

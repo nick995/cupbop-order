@@ -126,3 +126,10 @@ alter table public.target_activities enable row level security;
 alter table public.catering_targets drop constraint if exists catering_targets_status_check;
 alter table public.catering_targets add constraint catering_targets_status_check
   check (status in ('To visit','Visited','Follow up','Customer','Not interested'));
+
+-- Each place belongs to one person's list (staff name, see STAFF in lib/targets.ts).
+-- Everything saved before lists existed is MinGyu's.
+alter table public.catering_targets add column if not exists owner text;
+update public.catering_targets set owner = 'MinGyu' where owner is null;
+alter table public.catering_targets alter column owner set default 'MinGyu';
+alter table public.catering_targets alter column owner set not null;
